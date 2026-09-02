@@ -124,3 +124,17 @@ sandbox that already ships a browser.
 | 4       | Reporting: by device and by page, with screenshots and stats             | pending |
 | 5       | CLI polish, `doctor`, docs                                               | pending |
 | 6       | Azure DevOps pipeline (optional, last)                                   | pending |
+
+| Phase | Scope                                                        | Status  |
+| ----- | ------------------------------------------------------------ | ------- |
+| 0     | Scaffold and tooling                                         | done    |
+| 1     | Crawler: origin guard, depth limit, dedup, traps, capture    | done    |
+| 2     | Canonical page model extraction                              | done    |
+| 3.1   | URL mapping and page coverage                                | done    |
+| 3.2   | Content alignment and drift                                  | done    |
+| 3.3   | Image and price comparators                                  | done    |
+| 3.4   | CSS and layout drift, per viewport (separate report)         | done    |
+| 3.5   | Broken links and redirects                                   | done    |
+| 4     | Reporting: by device and by page, with screenshots and stats | done    |
+| 5     | CLI polish, `doctor`, docs                                   | done    |
+| 6     | Azure DevOps pipeline (optional, last)                       | pending |
