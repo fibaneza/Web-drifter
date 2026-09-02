@@ -298,6 +298,15 @@ export const configSchema = z
     stabilization: stabilizationSchema,
     browser: browserSchema,
     output: outputSchema,
+    /**
+     * Per-category severity overrides, e.g. `{ 'css.property-drift': 'info' }`.
+     *
+     * Teams tune this as a migration matures: a redesign that intentionally
+     * changed spacing everywhere can demote `css.layout-drift` without losing
+     * the findings, while a site where price accuracy is critical can promote
+     * `price.format-drift` to an error.
+     */
+    severities: z.record(z.enum(['error', 'warning', 'info'])).default({}),
     /** Selectors that identify a displayed price, checked after JSON-LD/microdata. */
     priceSelectors: z.array(z.string()).default([]),
   })

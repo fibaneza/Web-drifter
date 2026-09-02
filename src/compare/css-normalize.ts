@@ -10,9 +10,7 @@ import { COLOR_VALUED_PROPERTIES, LENGTH_PROPERTIES } from '../extract/css-prope
  * that is only correct in one of the two worlds.
  */
 const namesPlugin: Plugin =
-  typeof namesPluginImport === 'function'
-    ? (namesPluginImport as Plugin)
-    : (namesPluginImport as unknown as { default: Plugin }).default;
+  typeof namesPluginImport === 'function' ? namesPluginImport : namesPluginImport.default;
 
 // Lets `white` and `transparent` parse. Computed styles are always returned as
 // rgb() by the browser, but config-supplied and embedded values may not be.
