@@ -119,5 +119,6 @@ the machine-readable output can never disagree about what was found.
 ## Further reading
 
 - [Crawl boundaries](crawl-bounding.md) — origin, depth, revisits, traps
+- [The artifact store](artifact-store.md) — run layout, disk cost, `keepSnapshots`
 - [Report structure](reports.md) — the two axes, screenshots, statistics
 - [Avoiding false positives](false-positives.md) — why the tool stays quiet

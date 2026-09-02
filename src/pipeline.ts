@@ -6,7 +6,7 @@ import type { CrawlStats, Finding, PageStats, RunStats, Side } from './core/type
 import { compareRun } from './compare/engine.js';
 import { crawlSide } from './crawl/crawler.js';
 import { createCrawlPool } from './crawl/create-pool.js';
-import { ArtifactStore, generateRunId } from './store/artifact-store.js';
+import { ArtifactStore, formatBytes, generateRunId } from './store/artifact-store.js';
 import { writeReport, type WriteReportResult } from './report/write.js';
 
 /**
@@ -143,6 +143,8 @@ export interface FullRunResult extends CompareResult {
   runId: string;
   report: WriteReportResult;
   crawl: Partial<Record<Side, CrawlStats>>;
+  /** Bytes this run occupies on disk, after any pruning. */
+  diskUsage: number;
 }
 
 /** Crawl both sides, compare, and write reports. */
@@ -176,7 +178,28 @@ export async function runAll(options: {
 
   const report = await runReportStage(context, comparison);
 
-  return { ...comparison, store: crawl.store, runId: crawl.runId, report, crawl: crawl.stats };
+  // Snapshots are what make `drifter compare` re-runnable without re-crawling,
+  // so they are kept by default - but they are also by far the largest thing a
+  // run writes, and a scheduled pipeline that never re-diffs is paying
+  // gigabytes for an option it does not use.
+  if (!options.config.output.keepSnapshots) {
+    await crawl.store.pruneSnapshots();
+    options.logger.info(
+      'snapshots pruned (output.keepSnapshots is false); `drifter compare` will need a fresh crawl',
+    );
+  }
+
+  const diskUsage = await crawl.store.diskUsage();
+  options.logger.info({ bytes: diskUsage, human: formatBytes(diskUsage) }, 'run complete');
+
+  return {
+    ...comparison,
+    store: crawl.store,
+    runId: crawl.runId,
+    report,
+    crawl: crawl.stats,
+    diskUsage,
+  };
 }
 
 /**

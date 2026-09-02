@@ -488,6 +488,8 @@ export interface CrawlStats {
   pagesFailed: number;
   /** Pages whose readiness gate timed out - findings there are less reliable. */
   slowPages: number;
+  /** Pages that needed more than one attempt to capture. */
+  retriedPages: number;
   aliasesFound: number;
   /** Why URLs were not crawled, so a missing page can always be explained. */
   rejected: Record<string, number>;

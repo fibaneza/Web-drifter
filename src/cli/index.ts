@@ -9,7 +9,7 @@ import type { Side } from '../core/types.js';
 import { compareRun } from '../compare/engine.js';
 import { runAll, runCrawl, runReportStage, toSelfComparisonConfig } from '../pipeline.js';
 import { exitCodeFor, summarise } from '../report/write.js';
-import { ArtifactStore } from '../store/artifact-store.js';
+import { ArtifactStore, formatBytes } from '../store/artifact-store.js';
 import { writeInitConfig } from './init.js';
 
 /**
@@ -129,6 +129,7 @@ program
       const result = await runAll({ config, logger, captureScreenshots: options.screenshots });
 
       report(result.stats, result.report.indexPath);
+      process.stdout.write(`Run size: ${formatBytes(result.diskUsage)}\n\n`);
       return exitCodeFor(result.stats, config);
     });
   });

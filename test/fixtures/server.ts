@@ -36,11 +36,21 @@ export interface FixtureServerOptions {
   site: 'legacy' | 'modern';
   /** Extra permanent redirects, as `from path` -> `to path`. */
   redirects?: Record<string, string>;
+  /**
+   * Synthetic HTML routes, as `pathname` -> body.
+   *
+   * Served in place of a file, and unreachable from any fixture page unless one
+   * links to it. That isolation is the point: a test needing pathological
+   * behaviour (a page that never stops mutating, say) gets it without editing
+   * the shared fixture sites, whose content is pinned by `DRIFTS.md`.
+   */
+  extraRoutes?: Record<string, string>;
 }
 
 export async function startFixtureServer(options: FixtureServerOptions): Promise<FixtureServer> {
   const root = join(FIXTURES_DIR, options.site);
   const redirects = options.redirects ?? {};
+  const extraRoutes = options.extraRoutes ?? {};
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -51,6 +61,16 @@ export async function startFixtureServer(options: FixtureServerOptions): Promise
       if (redirectTarget) {
         res.writeHead(301, { location: redirectTarget });
         res.end();
+        return;
+      }
+
+      const extra = extraRoutes[pathname];
+      if (extra !== undefined) {
+        res.writeHead(200, {
+          'content-type': CONTENT_TYPES['.html'] ?? 'text/html',
+          'cache-control': 'no-store',
+        });
+        res.end(extra);
         return;
       }
 

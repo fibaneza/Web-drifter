@@ -2,7 +2,7 @@ import pLimit from 'p-limit';
 import type { Response } from 'playwright';
 import type { DeviceProfile } from '../config/devices.js';
 import type { DrifterConfig } from '../config/schema.js';
-import { toMessage } from '../core/errors.js';
+import { CaptureError, toMessage } from '../core/errors.js';
 import type { Logger } from '../core/logger.js';
 import {
   SNAPSHOT_SCHEMA_VERSION,
@@ -99,6 +99,7 @@ export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> 
     pagesCaptured: 0,
     pagesFailed: 0,
     slowPages: 0,
+    retriedPages: 0,
     aliasesFound: 0,
     rejected: {},
     maxDepthReached: 0,
@@ -132,7 +133,7 @@ export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> 
           stats.maxDepthReached = Math.max(stats.maxDepthReached, entry.depth);
 
           try {
-            const snapshot = await capturePage({
+            const attempt = await capturePageWithRetries(config.crawl.retries, logger, {
               url: entry.url,
               depth: entry.depth,
               side,
@@ -146,6 +147,8 @@ export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> 
               store,
               captureScreenshots: options.captureScreenshots ?? true,
             });
+            const snapshot = attempt.snapshot;
+            if (attempt.attempts > 1) stats.retriedPages += 1;
 
             const duplicate = frontier.markCaptured(entry, {
               finalUrl: new URL(snapshot.finalUrl),
@@ -210,6 +213,71 @@ interface CapturePageOptions {
   logger: Logger;
   store: ArtifactStore;
   captureScreenshots: boolean;
+}
+
+/**
+ * Capture a page, re-attempting when it fails or never settles.
+ *
+ * Two different failures are worth another try, and they look nothing alike:
+ * a navigation that threw (transient network or browser fault), and a capture
+ * that succeeded but whose readiness gate timed out - the page rendered, but
+ * possibly not completely.
+ *
+ * A retry can never make the result worse. Every attempt is kept and the best
+ * one wins, so a second attempt that fails outright still leaves the first
+ * attempt's partial capture in place rather than losing the page entirely.
+ */
+async function capturePageWithRetries(
+  retries: number,
+  logger: Logger,
+  options: CapturePageOptions,
+): Promise<{ snapshot: PageSnapshot; attempts: number }> {
+  let best: PageSnapshot | null = null;
+  let lastError: unknown = null;
+  // Counted rather than derived from `retries`: the loop can exit early on a
+  // clean capture, and a statistic that reports attempts nobody made is worse
+  // than no statistic at all.
+  let attempts = 0;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (attempt > 0) {
+      // Linear backoff. A page that timed out is usually under load, and
+      // retrying instantly mostly succeeds in reproducing the timeout.
+      await sleep(500 * attempt);
+      logger.debug({ url: options.url.href, attempt }, 'retrying capture');
+    }
+
+    attempts += 1;
+    try {
+      const snapshot = await capturePage(options);
+      // A clean capture is final; nothing is gained by trying again.
+      if (!readinessTimedOut(snapshot)) return { snapshot, attempts };
+      best = preferredCapture(best, snapshot);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (best) return { snapshot: best, attempts };
+
+  // Every attempt threw. Surface the last cause, wrapped so the URL travels
+  // with it - a bare rejection value here loses which page failed.
+  throw new CaptureError(
+    `capture failed after ${attempts} attempt(s): ${toMessage(lastError)}`,
+    options.url.href,
+    { cause: lastError },
+  );
+}
+
+function readinessTimedOut(snapshot: PageSnapshot): boolean {
+  return snapshot.errors.some((error) => error.startsWith('readiness'));
+}
+
+/** Fewer problems wins; on a tie, the attempt that saw more content. */
+function preferredCapture(a: PageSnapshot | null, b: PageSnapshot): PageSnapshot {
+  if (!a) return b;
+  if (a.errors.length !== b.errors.length) return b.errors.length < a.errors.length ? b : a;
+  return b.content.length > a.content.length ? b : a;
 }
 
 /** Capture one page at every enabled viewport and assemble its snapshot. */

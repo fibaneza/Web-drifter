@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { promisify } from 'node:util';
+import { gunzip as gunzipCb, gzip as gzipCb } from 'node:zlib';
 import { StoreError } from '../core/errors.js';
 import { SNAPSHOT_SCHEMA_VERSION, type PageSnapshot, type Side } from '../core/types.js';
 
@@ -25,6 +27,25 @@ import { SNAPSHOT_SCHEMA_VERSION, type PageSnapshot, type Side } from '../core/t
  *     findings.json  stats.json         comparison output
  *   <outDir>/latest -> <runId>
  */
+
+const gzip = promisify(gzipCb);
+const gunzip = promisify(gunzipCb);
+
+/**
+ * Snapshots are gzipped on disk.
+ *
+ * A snapshot carries every allowlisted computed property for every matched node
+ * at every viewport, which measures around 1.8 KB per node-viewport - so a
+ * 500-node page at four viewports is roughly 3.6 MB, and a 1000-page site runs
+ * to several gigabytes per side. The content is highly repetitive JSON, which
+ * gzip reduces by roughly an order of magnitude for the cost of a few
+ * milliseconds per page against a capture that already took seconds.
+ *
+ * Reads accept either extension, so a run captured by an older version is still
+ * comparable without re-crawling.
+ */
+const SNAPSHOT_EXT = '.json.gz';
+const LEGACY_SNAPSHOT_EXT = '.json';
 
 export interface RunMetadata {
   runId: string;
@@ -106,7 +127,7 @@ export class ArtifactStore {
   }
 
   snapshotPath(side: Side, pathKey: string): string {
-    return join(this.dir, 'snapshots', side, `${pathSlug(pathKey)}.json`);
+    return join(this.dir, 'snapshots', side, `${pathSlug(pathKey)}${SNAPSHOT_EXT}`);
   }
 
   screenshotPath(side: Side, pathKey: string, device: string): string {
@@ -116,11 +137,53 @@ export class ArtifactStore {
   async writeSnapshot(snapshot: PageSnapshot): Promise<void> {
     const file = this.snapshotPath(snapshot.side, snapshot.path);
     await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, JSON.stringify(snapshot), 'utf8');
+    await writeFile(file, await gzip(JSON.stringify(snapshot)));
   }
 
   async readSnapshot(side: Side, pathKey: string): Promise<PageSnapshot | null> {
-    return this.readJsonFile<PageSnapshot>(this.snapshotPath(side, pathKey));
+    const compressed = await this.readSnapshotFile(this.snapshotPath(side, pathKey));
+    if (compressed) return compressed;
+
+    // Fall back to the uncompressed layout so a run captured by an earlier
+    // version can still be compared without being re-crawled.
+    const legacy = join(this.dir, 'snapshots', side, `${pathSlug(pathKey)}${LEGACY_SNAPSHOT_EXT}`);
+    return this.readSnapshotFile(legacy);
+  }
+
+  /** Read a snapshot, transparently handling both the gzipped and plain layouts. */
+  private async readSnapshotFile(file: string): Promise<PageSnapshot | null> {
+    let raw: Buffer;
+    try {
+      raw = await readFile(file);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw new StoreError(`Could not read ${file}`, { cause });
+    }
+
+    try {
+      const json = file.endsWith(SNAPSHOT_EXT)
+        ? (await gunzip(raw)).toString('utf8')
+        : raw.toString('utf8');
+      return JSON.parse(json) as PageSnapshot;
+    } catch (cause) {
+      throw new StoreError(`Snapshot ${file} is corrupt`, { cause });
+    }
+  }
+
+  /**
+   * Delete captured snapshots.
+   *
+   * What `output.keepSnapshots: false` does. The trade-off is explicit: the run
+   * becomes far smaller on disk, and `drifter compare --run <id>` can no longer
+   * re-diff it without re-crawling.
+   */
+  async pruneSnapshots(): Promise<void> {
+    await rm(join(this.dir, 'snapshots'), { recursive: true, force: true });
+  }
+
+  /** Total bytes on disk for this run, so a growing store is visible not silent. */
+  async diskUsage(): Promise<number> {
+    return directorySize(this.dir);
   }
 
   /** Canonical path keys captured for a side, in stable order. */
@@ -146,8 +209,8 @@ export class ArtifactStore {
     }
 
     for (const entry of entries.sort()) {
-      if (!entry.endsWith('.json')) continue;
-      const snapshot = await this.readJsonFile<PageSnapshot>(join(dir, entry));
+      if (!entry.endsWith(SNAPSHOT_EXT) && !entry.endsWith(LEGACY_SNAPSHOT_EXT)) continue;
+      const snapshot = await this.readSnapshotFile(join(dir, entry));
       if (snapshot) yield snapshot;
     }
   }
@@ -189,6 +252,43 @@ export class ArtifactStore {
       throw new StoreError(`Could not read ${file}`, { cause });
     }
   }
+}
+
+/** Recursive size of a directory in bytes. Missing directories count as zero. */
+async function directorySize(dir: string): Promise<number> {
+  let total = 0;
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) total += await directorySize(full);
+    else {
+      try {
+        total += (await stat(full)).size;
+      } catch {
+        // A file removed between listing and stat is simply not counted.
+      }
+    }
+  }
+  return total;
+}
+
+/** Bytes as a short human string, for logs and CLI output. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit] ?? 'B'}`;
 }
 
 /** Most recent run directory by name, which sorts chronologically by design. */

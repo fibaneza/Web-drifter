@@ -95,6 +95,24 @@ not a two-minute job. Options, in order of preference:
 3. **Schedule it** — the template runs on a weekday cron rather than on every
    commit, which is usually the right cadence for a migration.
 
+## Disk on the build agent
+
+Snapshots are gzipped, but a large crawl at four viewports still runs to
+hundreds of megabytes, and a hosted agent's workspace is not generous. A
+scheduled pipeline that publishes a report and never re-compares does not need
+them:
+
+```yaml
+# drifter.config.ts
+output:
+  { dir: './drifter-out', keepSnapshots: false, // reports and screenshots are still published }
+```
+
+Pruning happens after the reports are written, so the published artifact is
+unaffected — only `drifter compare --run <id>` stops working without a re-crawl.
+The run logs its final size either way. See
+[The artifact store](artifact-store.md).
+
 ## Before you trust the gate
 
 Run `drifter doctor` once against your source site and commit the suppression

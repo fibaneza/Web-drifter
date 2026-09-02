@@ -467,6 +467,7 @@ const emptyCrawlStats = (): RunStats['crawl']['source'] => ({
   pagesCaptured: 0,
   pagesFailed: 0,
   slowPages: 0,
+  retriedPages: 0,
   aliasesFound: 0,
   rejected: {},
   maxDepthReached: 0,

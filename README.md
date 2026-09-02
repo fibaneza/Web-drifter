@@ -193,6 +193,7 @@ layout legitimately differs from a desktop one; that is not drift.
 | [The canonical page model](docs/page-model.md)      | Why the DOM is not compared, and the alignment algorithm |
 | [CSS comparison](docs/css-comparison.md)            | Computed styles, the allowlist, responsive visibility    |
 | [Crawl boundaries](docs/crawl-bounding.md)          | Origin, depth, revisits, query parameters, traps         |
+| [The artifact store](docs/artifact-store.md)        | Run layout, disk cost, and the `keepSnapshots` trade-off |
 | [Report structure](docs/reports.md)                 | The two navigation axes, screenshots, statistics         |
 | [Avoiding false positives](docs/false-positives.md) | What the tool handles, and what you should tune          |
 

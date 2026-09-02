@@ -153,3 +153,41 @@ already-captured  already fetched
 ```
 
 If a page you expected is missing from the report, that table says why.
+
+## Slow pages and retries
+
+A page whose readiness gate times out is still captured — the capture is just
+flagged as possibly incomplete, and counted in `slowPages`. That distinction
+matters, because dropping the page instead would report every node it contains
+as missing content: a timeout would masquerade as total drift.
+
+`crawl.retries` (default `1`) re-attempts two failures that look nothing alike:
+
+| Failure                  | What it usually means                |
+| ------------------------ | ------------------------------------ |
+| Navigation threw         | Transient network or browser fault   |
+| Readiness gate timed out | Rendered, but perhaps not completely |
+
+A retry can never make the result worse. Every attempt is kept and the best one
+wins — fewer errors first, then more content — so a second attempt that fails
+outright still leaves the first attempt's partial capture in place. A clean
+capture returns immediately without spending the remaining budget.
+
+Backoff is linear (500 ms, 1000 ms, …): a page that timed out is usually under
+load, and retrying instantly mostly succeeds in reproducing the timeout.
+
+```
+attempt 1  ─ readiness timed out ─┐
+                                  ├─ keep the better capture
+attempt 2  ─ readiness timed out ─┘
+                                  └─ captured, flagged slow, retriedPages += 1
+```
+
+`retriedPages` counts pages that needed more than one attempt. A run where it
+climbs is telling you the source site is slower than `stabilization.readyTimeoutMs`
+allows — raise that before raising `retries`, since the retry pays the full
+timeout again.
+
+## Further reading
+
+- [The artifact store](artifact-store.md) — what a bounded crawl costs on disk
