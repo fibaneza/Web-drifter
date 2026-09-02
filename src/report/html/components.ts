@@ -1,0 +1,231 @@
+import type { Finding, PercentStat } from '../../core/types.js';
+import type { MatrixRow, SubjectGroup } from '../aggregate.js';
+import { escapeAttr, escapeHtml, renderValue, severityBadge, toText } from './layout.js';
+
+/**
+ * Shared rendering pieces.
+ *
+ * Findings are rendered collapsed by default. A migration report routinely runs
+ * to hundreds of rows, and expanding every one of them makes the page
+ * unscannable - the value of the report is being able to see the shape of the
+ * problem before reading any single finding.
+ */
+
+/** Screenshot evidence for a finding, as paths relative to the report root. */
+export interface Evidence {
+  source?: string;
+  target?: string;
+  diff?: string;
+}
+
+export type EvidenceIndex = ReadonlyMap<string, Evidence>;
+
+export interface FindingRenderOptions {
+  /** Relative prefix back to the report root. */
+  root: string;
+  evidence?: EvidenceIndex;
+  /** Show which page a finding belongs to (off on a single-page view). */
+  showPath?: boolean;
+  /** Show which viewport (off on a single-device view). */
+  showViewport?: boolean;
+}
+
+export function renderFinding(finding: Finding, options: FindingRenderOptions): string {
+  const searchable = [
+    finding.path,
+    finding.label,
+    finding.category,
+    finding.subject ?? '',
+    finding.facet ?? '',
+    toText(finding.expected),
+    toText(finding.actual),
+  ].join(' ');
+
+  const tags: string[] = [severityBadge(finding.severity)];
+  if (options.showViewport !== false && finding.viewport) {
+    tags.push(`<span class="badge info">${escapeHtml(finding.viewport)}</span>`);
+  }
+
+  const meta: string[] = [`<code>${escapeHtml(finding.category)}</code>`];
+  if (options.showPath !== false) meta.push(`<code>${escapeHtml(finding.path)}</code>`);
+  if (finding.region) meta.push(escapeHtml(finding.region));
+
+  return `<details class="finding" data-filterable data-severity="${escapeAttr(
+    finding.severity,
+  )}" data-search="${escapeAttr(searchable)}">
+  <summary>
+    ${tags.join(' ')}
+    <span class="title">${escapeHtml(finding.label)}</span>
+    <span class="muted mono">${meta.join(' · ')}</span>
+  </summary>
+  <div class="body">
+    ${renderExpectedActual(finding)}
+    ${renderDetails(finding)}
+    ${renderEvidence(finding, options)}
+  </div>
+</details>`;
+}
+
+function renderExpectedActual(finding: Finding): string {
+  if (finding.expected === undefined && finding.actual === undefined) return '';
+  return `<div class="diffpair">
+  <div class="side"><div class="head">Source (legacy)</div><div class="val">${renderValue(
+    finding.expected,
+  )}</div></div>
+  <div class="side"><div class="head">Target (modern)</div><div class="val">${renderValue(
+    finding.actual,
+  )}</div></div>
+</div>`;
+}
+
+function renderDetails(finding: Finding): string {
+  const rows: Array<[string, string]> = [];
+
+  if (finding.subject) rows.push(['Element', `<code>${escapeHtml(finding.subject)}</code>`]);
+  if (finding.facet) rows.push(['Property', `<code>${escapeHtml(finding.facet)}</code>`]);
+
+  const hint = finding.details?.['selectorHint'];
+  if (typeof hint === 'string' && hint !== '') {
+    rows.push(['Where', `<code>${escapeHtml(hint)}</code>`]);
+  }
+
+  // Only surface a confidence that is not certain: showing "100%" on every row
+  // is noise, whereas a low value is a real caveat about the finding.
+  if (finding.confidence < 1) {
+    rows.push(['Confidence', `${Math.round(finding.confidence * 100)}% element match`]);
+  }
+
+  if (finding.sourceUrl) rows.push(['Source URL', link(finding.sourceUrl)]);
+  if (finding.targetUrl) rows.push(['Target URL', link(finding.targetUrl)]);
+  rows.push([
+    'Finding id',
+    `<code>${escapeHtml(finding.id)}</code> <span class="muted">(use in <code>ignore.findingIds</code> to accept)</span>`,
+  ]);
+
+  return `<dl class="kv">${rows
+    .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${value}</dd>`)
+    .join('')}</dl>`;
+}
+
+function link(url: string): string {
+  return `<a href="${escapeAttr(url)}" rel="noreferrer noopener">${escapeHtml(url)}</a>`;
+}
+
+function renderEvidence(finding: Finding, options: FindingRenderOptions): string {
+  const evidence = options.evidence?.get(finding.id);
+  if (!evidence) return '';
+
+  const figures: string[] = [];
+  const add = (caption: string, path: string | undefined): void => {
+    if (!path) return;
+    figures.push(
+      `<figure><figcaption>${escapeHtml(caption)}</figcaption><img loading="lazy" src="${escapeAttr(
+        options.root + path,
+      )}" alt="${escapeAttr(caption)}"></figure>`,
+    );
+  };
+
+  add('Source', evidence.source);
+  add('Target', evidence.target);
+  add('Pixel overlay', evidence.diff);
+
+  if (figures.length === 0) return '';
+  return `<div class="shots">${figures.join('')}</div>`;
+}
+
+export function renderFindingList(
+  findings: readonly Finding[],
+  options: FindingRenderOptions,
+): string {
+  if (findings.length === 0) {
+    return '<div class="panel empty">Nothing to report here.</div>';
+  }
+  return findings.map((finding) => renderFinding(finding, options)).join('\n');
+}
+
+/** A group of findings about one element, rendered as a single block. */
+export function renderSubjectGroups(
+  groups: readonly SubjectGroup[],
+  options: FindingRenderOptions,
+): string {
+  if (groups.length === 0) return '<div class="panel empty">Nothing to report here.</div>';
+
+  return groups
+    .map((group) => {
+      if (group.findings.length === 1) {
+        const only = group.findings[0];
+        return only ? renderFinding(only, options) : '';
+      }
+      return `<section>
+  <h3>${escapeHtml(group.label)} <span class="muted">(${group.findings.length} findings)</span></h3>
+  ${group.findings.map((finding) => renderFinding(finding, options)).join('\n')}
+</section>`;
+    })
+    .join('\n');
+}
+
+export function statTile(value: string, label: string, denominator?: string): string {
+  return `<div class="stat">
+  <div class="value">${escapeHtml(value)}</div>
+  <div class="label">${escapeHtml(label)}</div>
+  ${denominator ? `<div class="denom">${escapeHtml(denominator)}</div>` : ''}
+</div>`;
+}
+
+export function percentTile(stat: PercentStat, label: string, denominatorLabel: string): string {
+  return statTile(
+    `${stat.percent}%`,
+    label,
+    `${stat.matched.toLocaleString()} of ${stat.total.toLocaleString()} ${denominatorLabel}`,
+  );
+}
+
+/**
+ * The device matrix.
+ *
+ * Reading a row left to right tells you what kind of problem you have: a row
+ * that is clean until the narrow columns is a responsive bug, while a row that
+ * is uniform across every column is a general styling difference. Being able to
+ * tell those apart at a glance is the entire point of grouping by device.
+ */
+export function renderMatrix(
+  rows: readonly MatrixRow[],
+  viewports: readonly string[],
+  root: string,
+  pageHref: (path: string) => string,
+): string {
+  if (rows.length === 0) {
+    return '<div class="panel empty">No page produced a finding.</div>';
+  }
+
+  const head = viewports.map((viewport) => `<th class="num">${escapeHtml(viewport)}</th>`).join('');
+
+  const body = rows
+    .map((row) => {
+      const cells = viewports.map((viewport) => cell(row.byViewport[viewport] ?? 0)).join('');
+      return `<tr data-filterable data-severity="${escapeAttr(row.worst ?? '')}" data-search="${escapeAttr(
+        row.path,
+      )}">
+  <td><a href="${escapeAttr(root + pageHref(row.path))}"><code>${escapeHtml(row.path)}</code></a></td>
+  <td class="num">${cell(row.shared)}</td>
+  ${cells}
+  <td class="num"><strong>${row.total}</strong></td>
+</tr>`;
+    })
+    .join('\n');
+
+  return `<div class="scroll"><table>
+<thead><tr>
+  <th>Page</th>
+  <th class="num" title="Findings that apply regardless of screen size">All sizes</th>
+  ${head}
+  <th class="num">Total</th>
+</tr></thead>
+<tbody>${body}</tbody>
+</table></div>`;
+}
+
+function cell(count: number): string {
+  if (count === 0) return '<td class="num cell-0">·</td>';
+  return `<td class="num cell-hit">${count}</td>`;
+}

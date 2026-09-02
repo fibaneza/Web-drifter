@@ -183,6 +183,10 @@ export function compareStyles(
               group: groupOf(property),
               kind: comparison.kind,
               selectorHint: match.source.selectorHint,
+              // Carried so the report can crop this element out of the stored
+              // full-page screenshot as evidence, without re-navigating.
+              sourceBox: sourceStyle.box,
+              targetBox: targetStyle.box,
               ...(comparison.deltaPx === undefined ? {} : { deltaPx: comparison.deltaPx }),
             },
           }),
@@ -212,6 +216,8 @@ export function compareStyles(
               tolerancePx: Math.round(tolerance * 100) / 100,
               deltas: layout.deltas,
               selectorHint: match.source.selectorHint,
+              sourceBox: sourceStyle.box,
+              targetBox: targetStyle.box,
             },
           }),
         );
