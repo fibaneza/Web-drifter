@@ -11,7 +11,7 @@ tablet and mobile viewports.
 The premise that shapes every design decision: the two sites share **no markup**.
 A legacy CMS emits tables and `sc-` classes; a React rewrite emits semantic HTML
 and BEM. So any diff keyed on CSS selectors, DOM structure or raw HTML reports
-100% drift on a *perfect* migration and is worthless.
+100% drift on a _perfect_ migration and is worthless.
 
 ## Non-negotiable invariants
 
@@ -28,7 +28,7 @@ Break any of these and the tool becomes a noise generator nobody trusts.
 4. **Never crawl off-origin.** The origin guard is a hard boundary. External
    links are recorded and HEAD-checked, never rendered.
 5. **Screenshots are evidence, not detection.** Nothing is ever reported
-   *because* pixels differ — pixel comparison is far too noisy to gate on.
+   _because_ pixels differ — pixel comparison is far too noisy to gate on.
    Crops exist to help someone fix a finding another method already proved.
 6. **A false positive costs more than a missed finding.** A report with 4,000
    bogus rows gets abandoned in week two. When in doubt, lower the severity or
@@ -45,15 +45,15 @@ crawling is the slow part, tuning ignore rules is iterative, and re-diffing a
 stored crawl in seconds instead of re-crawling for twenty minutes is what makes
 the tool tunable. Do not collapse them into one in-memory pipeline.
 
-| Directory | Responsibility |
-|---|---|
-| `src/config/` | Zod schema (single source of truth for options, types and defaults), loader, device profiles |
-| `src/crawl/` | Frontier, origin guard, traps, browser pool, stabilisation, readiness gate, robots, sitemap |
-| `src/extract/` | In-page extractor, canonical page model, text normalisation, prices, images, CSS allowlist |
-| `src/map/` | URL canonicalisation, source→target path mapping |
-| `src/store/` | On-disk artifact store |
-| `src/compare/` | Comparators producing `Finding[]` |
-| `src/report/` | JSON / HTML / Markdown / JUnit output |
+| Directory      | Responsibility                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------- |
+| `src/config/`  | Zod schema (single source of truth for options, types and defaults), loader, device profiles |
+| `src/crawl/`   | Frontier, origin guard, traps, browser pool, stabilisation, readiness gate, robots, sitemap  |
+| `src/extract/` | In-page extractor, canonical page model, text normalisation, prices, images, CSS allowlist   |
+| `src/map/`     | URL canonicalisation, source→target path mapping                                             |
+| `src/store/`   | On-disk artifact store                                                                       |
+| `src/compare/` | Comparators producing `Finding[]`                                                            |
+| `src/report/`  | JSON / HTML / Markdown / JUnit output                                                        |
 
 ### The Node/browser split
 
@@ -107,20 +107,20 @@ sandbox that already ships a browser.
 - Run `npm run verify` before committing.
 - Keep `docs/` current when behaviour changes — `docs/crawl-bounding.md` and
   `docs/reports.md` are specifications, not afterthoughts.
-- Explain trade-offs in commit messages. The *why* is the valuable part.
+- Explain trade-offs in commit messages. The _why_ is the valuable part.
 
 ## Delivery phases
 
-| Phase | Scope | Status |
-|---|---|---|
-| 0 | Scaffold and tooling | done |
-| 1 | Crawler: origin guard, depth limit, dedup, traps, stabilisation, capture | done |
-| 2 | Canonical page model extraction | done |
-| 3.1 | URL mapping and page coverage | pending |
-| 3.2 | Content alignment and drift | pending |
-| 3.3 | Image and price comparators | pending |
-| **3.4** | **CSS and layout drift, per viewport (separate report)** | pending |
-| 3.5 | Broken links and redirects | pending |
-| 4 | Reporting: by device and by page, with screenshots and stats | pending |
-| 5 | CLI polish, `doctor`, docs | pending |
-| 6 | Azure DevOps pipeline (optional, last) | pending |
+| Phase   | Scope                                                                    | Status  |
+| ------- | ------------------------------------------------------------------------ | ------- |
+| 0       | Scaffold and tooling                                                     | done    |
+| 1       | Crawler: origin guard, depth limit, dedup, traps, stabilisation, capture | done    |
+| 2       | Canonical page model extraction                                          | done    |
+| 3.1     | URL mapping and page coverage                                            | pending |
+| 3.2     | Content alignment and drift                                              | pending |
+| 3.3     | Image and price comparators                                              | pending |
+| **3.4** | **CSS and layout drift, per viewport (separate report)**                 | pending |
+| 3.5     | Broken links and redirects                                               | pending |
+| 4       | Reporting: by device and by page, with screenshots and stats             | pending |
+| 5       | CLI polish, `doctor`, docs                                               | pending |
+| 6       | Azure DevOps pipeline (optional, last)                                   | pending |

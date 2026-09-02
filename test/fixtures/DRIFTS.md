@@ -34,10 +34,10 @@ wrong reason.
 after navigation, and which lazy-loads more content on scroll. It exists to pin
 down the React-shaped failure modes:
 
-| Case | Must hold |
-|---|---|
-| `/app#/tools` vs `/app#/parts` | Two **separate pages** — the route lives in the fragment |
-| `#pricing` | An in-page **anchor**, not a page — recorded, never crawled |
-| View renders 350ms after load | Captured content is the rendered view, never the `Loading...` placeholder |
-| Footnote appears only on scroll | Lazily-loaded content is captured, not missed |
-| `#/parts` heading differs between sides | Reported as `content.drift` |
+| Case                                    | Must hold                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| `/app#/tools` vs `/app#/parts`          | Two **separate pages** — the route lives in the fragment                  |
+| `#pricing`                              | An in-page **anchor**, not a page — recorded, never crawled               |
+| View renders 350ms after load           | Captured content is the rendered view, never the `Loading...` placeholder |
+| Footnote appears only on scroll         | Lazily-loaded content is captured, not missed                             |
+| `#/parts` heading differs between sides | Reported as `content.drift`                                               |
