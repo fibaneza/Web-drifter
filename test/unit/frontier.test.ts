@@ -114,6 +114,36 @@ describe('Frontier - revisit and loop avoidance', () => {
     assert.equal(f.pendingCount, 1);
   });
 
+  it('treats the same path with different query values as DIFFERENT pages', () => {
+    // Pagination, search and filter URLs share a path but are distinct pages.
+    // Collapsing them would silently drop most of a catalogue from the crawl.
+    const f = makeFrontier();
+    assert.ok(f.offer(u('/search?q=hammer'), 0, null).accepted);
+    assert.ok(f.offer(u('/search?q=saw'), 0, null).accepted, 'second query value must be crawled');
+    assert.ok(f.offer(u('/products?page=1'), 0, null).accepted);
+    assert.ok(f.offer(u('/products?page=2'), 0, null).accepted);
+    assert.ok(f.offer(u('/products'), 0, null).accepted, 'no-param variant is its own page');
+    assert.equal(f.pendingCount, 5);
+  });
+
+  it('still collapses URLs differing only in parameter order or tracking noise', () => {
+    const f = makeFrontier();
+    assert.ok(f.offer(u('/p?a=1&b=2'), 0, null).accepted);
+    assert.ok(!f.offer(u('/p?b=2&a=1'), 0, null).accepted, 'parameter order is not identity');
+    assert.ok(!f.offer(u('/p?a=1&b=2&utm_source=news'), 0, null).accepted);
+    assert.equal(f.pendingCount, 1);
+  });
+
+  it('collapses query variants ONLY when an allowlist is configured', () => {
+    // Documented footgun: a non-empty allowlist discards every other parameter,
+    // so /search?q=a and /search?q=b become one page and one is never compared.
+    const f = makeFrontier({
+      normalize: { ...DEFAULT_NORMALIZE_OPTIONS, queryAllowlist: ['page'] },
+    });
+    assert.ok(f.offer(u('/search?q=hammer'), 0, null).accepted);
+    assert.ok(!f.offer(u('/search?q=saw'), 0, null).accepted);
+  });
+
   it('never re-queues a page that has already been captured', () => {
     const f = makeFrontier();
     const first = f.offer(u('/a'), 0, null);
@@ -161,6 +191,23 @@ describe('Frontier - revisit and loop avoidance', () => {
       contentHash: 'irrelevant',
     });
     assert.equal(result.duplicateOf, 'https://legacy.test/canonical');
+  });
+
+  it('can be told not to dedup on content, so query variants are always kept', () => {
+    const f = makeFrontier({ dedupeIdenticalContent: false });
+    f.seed(u('/list?sort=asc'));
+    const first = f.next();
+    assert.ok(first);
+    f.markCaptured(first, { finalUrl: u('/list?sort=asc'), contentHash: 'identical' });
+
+    f.offer(u('/list?sort=desc'), 1, '/list?sort=asc');
+    const second = f.next();
+    assert.ok(second);
+    const result = f.markCaptured(second, {
+      finalUrl: u('/list?sort=desc'),
+      contentHash: 'identical',
+    });
+    assert.equal(result.duplicateOf, null, 'both variants must be kept for comparison');
   });
 
   it('dedups distinct URLs that render identical content', () => {

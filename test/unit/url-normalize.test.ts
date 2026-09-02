@@ -85,6 +85,40 @@ describe('canonicalizeUrl', () => {
   });
 });
 
+describe('hash routing', () => {
+  it('drops an in-page anchor', () => {
+    assert.equal(key('https://a.test/about#team'), '/about');
+  });
+
+  it('keeps a client-side route in the fragment', () => {
+    // A HashRouter SPA carries the whole route after the '#'. Stripping it
+    // would collapse the entire site into a single page.
+    assert.equal(key('https://a.test/#/products/hats'), '/#/products/hats');
+    assert.notEqual(key('https://a.test/#/products'), key('https://a.test/#/basket'));
+  });
+
+  it('keeps a hashbang route', () => {
+    assert.equal(key('https://a.test/#!/products'), '/#!/products');
+  });
+
+  it('can be forced on or off', () => {
+    assert.equal(key('https://a.test/about#team', { hashRouting: 'always' }), '/about#team');
+    assert.equal(key('https://a.test/#/products', { hashRouting: 'never' }), '/');
+  });
+
+  it('classifies a hash route as internal but a bare anchor as an anchor', () => {
+    const page = 'https://a.test/';
+    const isOurs = (u: URL): boolean => u.hostname === 'a.test';
+    assert.equal(classifyHref('#/products', page, isOurs), 'internal');
+    assert.equal(classifyHref('#pricing', page, isOurs), 'anchor');
+  });
+
+  it('resolves a hash route to a crawlable URL', () => {
+    assert.equal(resolveHref('#/products', 'https://a.test/')?.href, 'https://a.test/#/products');
+    assert.equal(resolveHref('#pricing', 'https://a.test/'), null);
+  });
+});
+
 describe('resolveHref', () => {
   const page = 'https://a.test/shop/cats/';
 

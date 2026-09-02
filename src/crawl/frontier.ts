@@ -57,6 +57,15 @@ export interface FrontierOptions {
   excludePatterns?: readonly RegExp[];
   includePatterns?: readonly RegExp[];
   ignorePaths?: readonly RegExp[];
+  /**
+   * Treat two different URLs that render identical content as one page.
+   *
+   * Catches session ids, print variants and alias paths. The trade-off: if
+   * `/list?sort=asc` and `/list?sort=desc` happen to render identically on the
+   * source but NOT on the target, the second URL is never captured on the
+   * source and so never compared. Rare, but real - hence the switch.
+   */
+  dedupeIdenticalContent?: boolean;
 }
 
 export interface FrontierStats {
@@ -230,6 +239,8 @@ export class Frontier {
 
     // Layer 3 - content dedup. Distinct URLs rendering an identical page
     // (session ids, alias paths, print variants) are recorded, not re-processed.
+    if (this.#options.dedupeIdenticalContent === false) return { duplicateOf: null };
+
     const existing = this.#byContentHash.get(result.contentHash);
     if (existing && existing !== requestedHref) {
       this.#aliases.set(requestedHref, existing);

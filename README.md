@@ -59,6 +59,11 @@ Three hard limits, enforced in the frontier before a URL is ever fetched:
   URL, and a hash of the page content. Plus crawler-trap guards for self-nesting paths, faceted
   search explosions and over-long URLs.
 
+**Query parameters are part of a page's identity.** `/search?q=hammer` and `/search?q=saw` are two
+different pages and both are crawled; only known tracking parameters (`utm_*`, `gclid`, `fbclid`, …)
+are stripped, and parameter _order_ is normalised so `?a=1&b=2` and `?b=2&a=1` are one page. See
+[Crawl boundaries](docs/crawl-bounding.md) for the full rules and the one setting that changes this.
+
 ---
 
 ## Requirements
@@ -134,6 +139,15 @@ export default defineConfig({
   },
 
   viewports: ['desktop', 'tablet', 'mobile-md', 'mobile-sm'],
+
+  urlMapping: {
+    trailingSlash: 'strip',
+    // Drop noisy parameters individually. Prefer this over `queryAllowlist`,
+    // which discards every parameter NOT listed and would collapse
+    // /search?q=hammer and /search?q=saw into one page.
+    dropParams: ['sessionid'],
+    overrides: { '/products.aspx': '/products' },
+  },
 
   ignore: {
     selectors: ['#chat-widget', '.ad-slot'],

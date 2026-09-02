@@ -50,6 +50,33 @@ function isTrackingParam(name: string): boolean {
   return TRACKING_PARAMS.has(name) || name.toLowerCase().startsWith('utm_');
 }
 
+/**
+ * How to treat the URL fragment.
+ *
+ * A client-side router may put the whole route in the fragment
+ * (`/#/products/hats`). Stripping it would collapse an entire hash-routed SPA
+ * into a single page, so the fragment sometimes IS the identity.
+ *
+ * - `auto` (default): a fragment starting with `/` or `!` is a route and is
+ *   kept; anything else (`#pricing`) is an in-page anchor and is dropped.
+ * - `always`: keep every fragment. Use when routes do not start with `/`.
+ * - `never`: drop every fragment.
+ */
+export type HashRouting = 'auto' | 'always' | 'never';
+
+/** A fragment that looks like a client-side route rather than an anchor. */
+export function isRouteFragment(hash: string): boolean {
+  const value = hash.startsWith('#') ? hash.slice(1) : hash;
+  return value.startsWith('/') || value.startsWith('!');
+}
+
+export function shouldKeepHash(hash: string, mode: HashRouting): boolean {
+  if (hash === '' || hash === '#') return false;
+  if (mode === 'never') return false;
+  if (mode === 'always') return true;
+  return isRouteFragment(hash);
+}
+
 export interface UrlNormalizeOptions {
   trailingSlash: 'strip' | 'keep' | 'add';
   lowercasePath: boolean;
@@ -62,6 +89,8 @@ export interface UrlNormalizeOptions {
   queryAllowlist: readonly string[];
   dropParams: readonly string[];
   indexFileNames: readonly string[];
+  /** Whether the fragment is part of the page's identity. */
+  hashRouting?: HashRouting;
 }
 
 export const DEFAULT_NORMALIZE_OPTIONS: UrlNormalizeOptions = {
@@ -70,6 +99,7 @@ export const DEFAULT_NORMALIZE_OPTIONS: UrlNormalizeOptions = {
   queryAllowlist: [],
   dropParams: [],
   indexFileNames: ['index.html', 'index.htm', 'default.aspx'],
+  hashRouting: 'auto',
 };
 
 export interface CanonicalUrl {
@@ -81,6 +111,8 @@ export interface CanonicalUrl {
   path: string;
   /** Normalised query string including the leading `?`, or `''`. */
   search: string;
+  /** Kept fragment including the leading `#`, or `''` when it is an anchor. */
+  hash: string;
 }
 
 /** Collapse `//` runs and strip a configured index filename. */
@@ -157,8 +189,16 @@ export function canonicalizeUrl(
 
   const path = normalizePathname(url.pathname, options);
   const search = normalizeSearch(url.searchParams, options);
+  const hash = shouldKeepHash(url.hash, options.hashRouting ?? 'auto') ? url.hash : '';
 
-  return { href: `${origin}${path}${search}`, key: `${path}${search}`, origin, path, search };
+  return {
+    href: `${origin}${path}${search}${hash}`,
+    key: `${path}${search}${hash}`,
+    origin,
+    path,
+    search,
+    hash,
+  };
 }
 
 /**
@@ -168,12 +208,26 @@ export function canonicalizeUrl(
  * `javascript:`, `data:`, empty, bare fragments) or that fail to parse.
  * Protocol-relative hrefs (`//host/x`) resolve against the page's scheme.
  */
-export function resolveHref(href: string, pageUrl: string): URL | null {
+export function resolveHref(
+  href: string,
+  pageUrl: string,
+  hashRouting: HashRouting = 'auto',
+): URL | null {
   const trimmed = href.trim();
-  if (trimmed === '' || trimmed.startsWith('#')) return null;
+  if (trimmed === '') return null;
 
+  // `#/products` is a client-side route and must resolve to a crawlable URL;
+  // `#pricing` is an in-page anchor and must not.
+  if (trimmed.startsWith('#')) {
+    return shouldKeepHash(trimmed, hashRouting) ? safeParse(trimmed, pageUrl) : null;
+  }
+
+  return safeParse(trimmed, pageUrl);
+}
+
+function safeParse(href: string, pageUrl: string): URL | null {
   try {
-    const url = new URL(trimmed, pageUrl);
+    const url = new URL(href, pageUrl);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     return url;
   } catch {
@@ -188,10 +242,15 @@ export function classifyHref(
   href: string,
   pageUrl: string,
   isAllowedOrigin: (u: URL) => boolean,
+  hashRouting: HashRouting = 'auto',
 ): LinkClass {
   const trimmed = href.trim();
   if (trimmed === '') return 'unsupported';
-  if (trimmed.startsWith('#')) return 'anchor';
+  // A hash route (`#/products`) is a real destination and must be followed;
+  // a bare anchor (`#pricing`) points inside the page we are already on.
+  if (trimmed.startsWith('#')) {
+    return shouldKeepHash(trimmed, hashRouting) ? 'internal' : 'anchor';
+  }
 
   const lower = trimmed.toLowerCase();
   if (lower.startsWith('mailto:')) return 'mailto';
@@ -205,7 +264,7 @@ export function classifyHref(
     return 'unsupported';
   }
 
-  const resolved = resolveHref(trimmed, pageUrl);
+  const resolved = resolveHref(trimmed, pageUrl, hashRouting);
   if (!resolved) return 'unsupported';
 
   return isAllowedOrigin(resolved) ? 'internal' : 'external';

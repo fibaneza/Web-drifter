@@ -26,9 +26,9 @@ export interface DeviceProfile {
   deviceScaleFactor: number;
   isMobile: boolean;
   hasTouch: boolean;
-  userAgent?: string;
+  userAgent?: string | undefined;
   /** Optional escape hatch: use a Playwright registry device instead. */
-  playwrightDevice?: string;
+  playwrightDevice?: string | undefined;
 }
 
 const MOBILE_UA =

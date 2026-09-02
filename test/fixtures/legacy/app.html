@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Tools - App</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      #view {
+        padding: 24px;
+      }
+      #later {
+        padding: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <a href="#/tools">Tools</a> | <a href="#/parts">Parts</a> |
+      <a href="#pricing">Jump to pricing</a>
+    </nav>
+    <main id="view">Loading...</main>
+    <section id="later"></section>
+    <h3 id="pricing">Pricing</h3>
+    <script>
+      // A hash-routed SPA that renders its view asynchronously, the way a real
+      // client-side router does after fetching data.
+      var ROUTES = { '#/tools': 'Hand tools catalogue', '#/parts': 'Spare parts catalogue' };
+      function render() {
+        var name = ROUTES[location.hash] || 'Welcome to the catalogue';
+        setTimeout(function () {
+          document.getElementById('view').textContent = name;
+        }, 350);
+      }
+      window.addEventListener('hashchange', render);
+      render();
+      // Content that only appears once the user scrolls, as an infinite list would.
+      var loaded = false;
+      window.addEventListener('scroll', function () {
+        if (loaded || window.scrollY < 50) return;
+        loaded = true;
+        setTimeout(function () {
+          document.getElementById('later').textContent = 'Lazy loaded footnote';
+        }, 200);
+      });
+      document.body.style.minHeight = '2000px';
+    </script>
+  </body>
+</html>

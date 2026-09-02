@@ -27,6 +27,28 @@ export interface StabilizationOptions {
 export const DRIFTER_GLOBAL = '__drifterReadiness';
 
 /**
+ * Shim for bundler name-preservation helpers.
+ *
+ * Functions handed to `page.evaluate` are serialised with `Function.prototype
+ * .toString()` and re-evaluated inside the browser. Bundlers that preserve
+ * function names (esbuild, and therefore tsx and vitest) rewrite named function
+ * expressions to call an injected `__name` helper - which exists in the Node
+ * module scope but NOT in the page, so the serialised function dies with
+ * "ReferenceError: __name is not defined".
+ *
+ * Defining an identity `__name` in the page makes the injected call harmless.
+ * It is a no-op for a plain `tsc` build, which emits no such helper, so this is
+ * safe to install unconditionally rather than only in development.
+ */
+export function bundlerShimInitScript(): string {
+  return `(() => {
+  if (typeof globalThis.__name !== 'function') {
+    globalThis.__name = (target) => target;
+  }
+})();`;
+}
+
+/**
  * Instrumentation for the readiness gate.
  *
  * Registered FIRST so it captures the pristine `fetch` / `XMLHttpRequest`
@@ -49,11 +71,19 @@ export function readinessInitScript(): string {
     // starts rendering shortly after load is not mistaken for a settled page.
     loadAt: null,
     mutationCount: 0,
+    // Snapshot of mutationCount when load fired. Parsing the document itself
+    // generates mutations, so only those AFTER load indicate that client-side
+    // rendering has actually begun.
+    mutationsAtLoad: 0,
   };
   window.${DRIFTER_GLOBAL} = state;
 
-  if (document.readyState === 'complete') state.loadAt = performance.now();
-  else window.addEventListener('load', () => { state.loadAt = performance.now(); }, { once: true });
+  const markLoaded = () => {
+    state.loadAt = performance.now();
+    state.mutationsAtLoad = state.mutationCount;
+  };
+  if (document.readyState === 'complete') markLoaded();
+  else window.addEventListener('load', markLoaded, { once: true });
 
   const touchRequest = () => { state.lastRequestAt = performance.now(); };
 
@@ -199,8 +229,9 @@ export function animationInitScript(): string {
 
 /** All init scripts, in the order they must be registered. */
 export function buildInitScripts(options: StabilizationOptions): string[] {
-  // Readiness first: it must capture the untouched fetch/XHR.
-  const scripts = [readinessInitScript()];
+  // Shim first: everything after it may itself be bundler-transformed.
+  // Readiness second: it must capture the untouched fetch/XHR.
+  const scripts = [bundlerShimInitScript(), readinessInitScript()];
   if (options.freezeAnimations) scripts.push(animationInitScript());
   if (options.seedRandom) scripts.push(randomInitScript(options.randomSeed));
   // Clock last: it rewrites Date, which nothing above depends on.

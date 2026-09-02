@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Tools - Home</title>
+    <meta name="description" content="Quality tools since 1952." />
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      .masthead {
+        background: #12355b;
+        color: #fff;
+        padding: 16px;
+      }
+      /* DRIFT: 32px on legacy */
+      .masthead__title {
+        font-size: 28px;
+        margin: 0;
+        font-weight: 700;
+        color: #ffffff;
+      }
+      .site-nav {
+        display: flex;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .site-nav__item {
+        padding: 8px 12px;
+      }
+      .site-nav__link {
+        color: #12355b;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .site-nav__item--promo {
+        display: block;
+      }
+      .content {
+        padding: 24px;
+      }
+      /* DRIFT: legacy hides this below 480px, this hides it below 900px */
+      @media (max-width: 900px) {
+        .site-nav__item--promo {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="masthead"><h1 class="masthead__title">Acme Tools</h1></header>
+    <nav>
+      <ul class="site-nav">
+        <li class="site-nav__item"><a class="site-nav__link" href="/">Home</a></li>
+        <li class="site-nav__item"><a class="site-nav__link" href="/about">About us</a></li>
+        <li class="site-nav__item"><a class="site-nav__link" href="/products">Products</a></li>
+        <li class="site-nav__item"><a class="site-nav__link" href="/blog">Blog</a></li>
+        <li class="site-nav__item site-nav__item--promo">
+          <a class="site-nav__link" href="/products">Spring sale</a>
+        </li>
+      </ul>
+    </nav>
+    <main class="content">
+      <img
+        src="/_next/image?url=%2Fstatic%2Fhero.a1b2c3d4.webp&amp;w=1200"
+        alt="Workshop bench"
+        width="600"
+        height="200"
+      />
+      <h2>Trusted by professionals</h2>
+      <p>We have supplied hand tools to trade professionals since 1952.</p>
+      <p>Every tool carries a lifetime guarantee.</p>
+      <p><a href="https://external-supplier.example.com/catalogue">Our supplier</a></p>
+      <p><a href="/app#/tools">Catalogue app</a></p>
+      <p><a href="/search?q=hammer">Search hammers</a> | <a href="/search?q=saw">Search saws</a></p>
+      <p><a href="/missing-page">Latest catalogue</a></p>
+    </main>
+    <footer><p>&copy; Acme Tools</p></footer>
+  </body>
+</html>

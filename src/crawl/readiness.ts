@@ -37,6 +37,21 @@ export interface ReadinessOptions {
    * starters a chance to touch the DOM before we decide. Defaults to `quietMs`.
    */
   minWaitMs?: number;
+  /**
+   * How long to wait after load for the page to render something, when it has
+   * not mutated the DOM at all since load.
+   *
+   * A client-side router fetches, then renders - so for a while after load the
+   * page shows a placeholder and is perfectly quiet. Quiescence alone declares
+   * that "settled" and captures "Loading...", which is then reported as total
+   * content loss (or, worse, makes two different routes hash identically and
+   * one gets discarded as a duplicate).
+   *
+   * Waiting for the first post-load mutation fixes that. The cost is paid only
+   * by pages that never mutate - a fully server-rendered page waits this long
+   * once - so set it to 0 for a purely static site.
+   */
+  awaitFirstRenderMs?: number;
   /** How often to re-check. */
   pollMs?: number;
 }
@@ -54,7 +69,12 @@ interface ProbeResult {
 }
 
 /** Evaluated in the page; returns which readiness condition is unsatisfied. */
-function probe(quietMs: number, minWaitMs: number, globalName: string): ProbeResult {
+function probe(
+  quietMs: number,
+  minWaitMs: number,
+  awaitFirstRenderMs: number,
+  globalName: string,
+): ProbeResult {
   if (document.readyState !== 'complete') {
     return { ready: false, blockedBy: `readyState=${document.readyState}` };
   }
@@ -70,6 +90,8 @@ function probe(quietMs: number, minWaitMs: number, globalName: string): ProbeRes
         lastMutationAt: number;
         lastRequestAt: number;
         loadAt: number | null;
+        mutationCount: number;
+        mutationsAtLoad: number;
       }
     | undefined;
 
@@ -90,6 +112,17 @@ function probe(quietMs: number, minWaitMs: number, globalName: string): ProbeRes
   const sinceLoad = now - state.loadAt;
   if (sinceLoad < minWaitMs) {
     return { ready: false, blockedBy: `settling (${Math.round(sinceLoad)}/${minWaitMs}ms)` };
+  }
+
+  // The page has been quiet since load - but a client-side router that has not
+  // rendered yet looks exactly the same as a finished static page. Give it a
+  // bounded chance to touch the DOM before believing it is done.
+  const renderedSinceLoad = state.mutationCount > state.mutationsAtLoad;
+  if (!renderedSinceLoad && sinceLoad < awaitFirstRenderMs) {
+    return {
+      ready: false,
+      blockedBy: `awaiting first render (${Math.round(sinceLoad)}/${awaitFirstRenderMs}ms)`,
+    };
   }
   const sinceMutation = now - state.lastMutationAt;
   if (sinceMutation < quietMs) {
@@ -113,7 +146,13 @@ function probe(quietMs: number, minWaitMs: number, globalName: string): ProbeRes
  */
 export async function waitForReady(
   page: Page,
-  { quietMs, timeoutMs, minWaitMs = quietMs, pollMs = 100 }: ReadinessOptions,
+  {
+    quietMs,
+    timeoutMs,
+    minWaitMs = quietMs,
+    awaitFirstRenderMs = 1000,
+    pollMs = 100,
+  }: ReadinessOptions,
 ): Promise<ReadinessResult> {
   const started = Date.now();
   let blockedBy: string | null = 'not yet evaluated';
@@ -121,16 +160,16 @@ export async function waitForReady(
   while (Date.now() - started < timeoutMs) {
     let result: ProbeResult;
     try {
-      result = await page.evaluate<ProbeResult, [number, number, string]>(
-        ([quiet, minWait, globalName]) => {
+      result = await page.evaluate<ProbeResult, [number, number, number, string]>(
+        ([quiet, minWait, firstRender, globalName]) => {
           // Installed by probeInitScript; see `probe` above for the source.
           return (
             window as unknown as {
-              __drifterProbe: (q: number, m: number, g: string) => ProbeResult;
+              __drifterProbe: (q: number, m: number, r: number, g: string) => ProbeResult;
             }
-          ).__drifterProbe(quiet, minWait, globalName);
+          ).__drifterProbe(quiet, minWait, firstRender, globalName);
         },
-        [quietMs, minWaitMs, DRIFTER_GLOBAL],
+        [quietMs, minWaitMs, awaitFirstRenderMs, DRIFTER_GLOBAL],
       );
     } catch {
       // Navigation raced us (client-side route change). Retry.

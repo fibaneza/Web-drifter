@@ -77,6 +77,12 @@ export const crawlSchema = z
      */
     checkExternalLinks: z.boolean().default(true),
     respectRobotsTxt: z.boolean().default(true),
+    /**
+     * Treat two URLs that render identical content as one page (session ids,
+     * print variants, alias paths). Turn off if the site has URLs that
+     * legitimately render the same on one side but differ on the other.
+     */
+    dedupeIdenticalContent: z.boolean().default(true),
     /** Paths matching any of these are never enqueued. */
     excludePatterns: z.array(regexLike).default([]),
     /** When non-empty, only paths matching one of these are enqueued. */
@@ -100,10 +106,31 @@ export const urlMappingSchema = z
     trailingSlash: z.enum(['strip', 'keep', 'add']).default('strip'),
     /** Lowercase the path before comparing. */
     lowercasePath: z.boolean().default(true),
-    /** Query params kept (and sorted) in the canonical key. All others dropped. */
+    /**
+     * Query parameters kept in the canonical key.
+     *
+     * By default this is EMPTY, which means every parameter is kept except
+     * known tracking ones - so `/search?q=hammer` and `/search?q=saw` are
+     * correctly treated as two different pages.
+     *
+     * WARNING: setting this switches to strict allowlist mode, where every
+     * parameter NOT listed is discarded. `queryAllowlist: ['page']` collapses
+     * `/search?q=hammer` and `/search?q=saw` into a single `/search`, and one
+     * of them is silently never compared. Prefer `dropParams` to remove
+     * specific noisy parameters, and reach for the allowlist only to tame a
+     * faceted-search URL explosion.
+     */
     queryAllowlist: z.array(z.string()).default([]),
     /** Params always dropped, on top of the built-in tracking-param list. */
     dropParams: z.array(z.string()).default([]),
+    /**
+     * Whether the URL fragment is part of a page's identity.
+     *
+     * A client-side router may carry the whole route in the fragment
+     * (`/#/products/hats`). `auto` keeps a fragment that starts with `/` or
+     * `!` (a route) and drops anything else (`#pricing`, an in-page anchor).
+     */
+    hashRouting: z.enum(['auto', 'always', 'never']).default('auto'),
     /** Filenames stripped from the end of a path. */
     indexFileNames: z.array(z.string()).default(['index.html', 'index.htm', 'default.aspx']),
     /** Explicit source path -> target path overrides, applied before rules. */
@@ -180,6 +207,19 @@ export const stabilizationSchema = z
      * Defaults to `quietMs` when omitted.
      */
     minWaitMs: z.number().int().min(0).optional(),
+    /**
+     * How long to wait after load for a page that has not mutated the DOM at
+     * all to render something.
+     *
+     * A client-side router fetches, then renders; until it does, the page is
+     * perfectly quiet and looks "settled" while still showing a placeholder.
+     * Capturing then records the placeholder - and can make two different
+     * routes hash identically, so one is discarded as a duplicate.
+     *
+     * Only pages that never mutate pay this cost, so a fully server-rendered
+     * site can set it to 0.
+     */
+    awaitFirstRenderMs: z.number().int().min(0).default(1000),
     /**
      * Per-path timeout overrides for pages known to be slow - report builders,
      * search result pages, anything fronting a slow upstream. The first

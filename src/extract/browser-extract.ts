@@ -267,9 +267,13 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
     return 'paragraph';
   };
 
+  /** Elements already captured by the block pass, so later passes skip them. */
+  const capturedElements = new Set<Element>();
+
   for (const element of document.querySelectorAll(BLOCK_SELECTOR)) {
     if (isIgnored(element)) continue;
     if (element.parentElement?.closest(BLOCK_SELECTOR)) continue;
+    capturedElements.add(element);
 
     const tag = element.tagName.toLowerCase();
     const kind = blockKind(tag);
@@ -294,6 +298,58 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
     }
 
     pushNode(element, kind, text, attrs);
+  }
+
+  /*
+   * Generic text-bearing elements.
+   *
+   * The block pass above only sees semantic tags. A component-based rewrite
+   * puts most of its copy in `<div>` and `<span>`, and a client-side router
+   * commonly renders straight into a container - so text like
+   * `<main id="view">Hand tools catalogue</main>` would otherwise be invisible
+   * to the model entirely. That is not a cosmetic gap: it silently drops real
+   * content from the comparison, and can make two different routes look
+   * identical.
+   *
+   * Only DIRECT text is taken (an element's own text nodes, not its
+   * descendants'), so a wrapper does not re-report everything nested inside it.
+   */
+  const directText = (element: Element): string => {
+    let text = '';
+    for (const child of element.childNodes) {
+      if (child.nodeType === 3) text += child.nodeValue ?? '';
+    }
+    return text;
+  };
+
+  const SKIP_GENERIC = new Set([
+    'a', // captured as links
+    'script',
+    'style',
+    'noscript',
+    'template',
+    'option',
+    'title',
+    'br',
+  ]);
+
+  const CONTROL_SELECTOR = 'button, [role="button"], summary, label, select, textarea';
+
+  for (const element of document.querySelectorAll('body *')) {
+    if (isIgnored(element) || capturedElements.has(element)) continue;
+
+    const tag = element.tagName.toLowerCase();
+    if (SKIP_GENERIC.has(tag)) continue;
+    // Already handled by the block pass, or nested inside something that was.
+    if (element.matches(BLOCK_SELECTOR) || element.closest(BLOCK_SELECTOR)) continue;
+    // An anchor's label belongs to the link node, not to a generic text node.
+    if (element.closest('a[href]')) continue;
+
+    const text = directText(element);
+    if (text.trim() === '') continue;
+
+    capturedElements.add(element);
+    pushNode(element, element.matches(CONTROL_SELECTOR) ? 'control' : 'paragraph', text);
   }
 
   /* ---------------------------------------------------------------- links */

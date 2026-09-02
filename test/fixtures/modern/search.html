@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Tools - Search</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      .content {
+        padding: 24px;
+      }
+      .masthead {
+        background: #12355b;
+        color: #fff;
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="masthead"><h1>Acme Tools</h1></header>
+    <main class="content">
+      <h2>Search results</h2>
+      <p id="summary">Loading...</p>
+    </main>
+    <script>
+      var q = new URLSearchParams(location.search).get('q') || '';
+      document.getElementById('summary').textContent = 'Results for ' + q;
+    </script>
+  </body>
+</html>
