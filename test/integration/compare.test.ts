@@ -269,6 +269,36 @@ describe('compare (end to end)', () => {
     assert.deepEqual(productDrift, [], 'a td -> span tag change was reported as content drift');
   });
 
+  /* -------------------------------- links --------------------------------- */
+
+  it('reports a link that 404s on the target', () => {
+    const broken = of('link.broken');
+    assert.ok(
+      broken.some((f) => String(f.subject ?? f.label).includes('missing-page')),
+      `expected /missing-page to be reported broken; got: ${broken.map((f) => f.label).join(' | ')}`,
+    );
+    assert.ok(broken.every((f) => f.severity === 'error'));
+  });
+
+  it('reports a source path with no counterpart on the target', () => {
+    // The legacy nav links /contact, which the modern site does not serve.
+    const mismatches = of('link.path-mismatch');
+    assert.ok(
+      mismatches.some((f) => f.subject === '/contact' || String(f.label).includes('/contact')),
+      `expected /contact; got: ${mismatches.map((f) => f.label).join(' | ')}`,
+    );
+  });
+
+  it('counts links without ever having crawled an external one', () => {
+    assert.ok(stats.links.internalLinks > 0);
+    assert.ok(stats.links.externalLinks > 0, 'the external supplier link should be counted');
+    assert.ok(stats.links.linkParity.total > 0);
+    assert.ok(
+      stats.links.linkParity.percent < 100,
+      'the missing /contact route should reduce link parity',
+    );
+  });
+
   /* -------------------------------- stats --------------------------------- */
 
   it('reports coverage as a percentage with a stated denominator', () => {

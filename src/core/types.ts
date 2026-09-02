@@ -332,6 +332,20 @@ export interface Finding {
   viewport?: string | undefined;
   region?: Region | undefined;
   nodeKind?: NodeKind | undefined;
+  /**
+   * Stable handle for the element or item this finding is about - a node key,
+   * an asset key, a link URL. Persisted (not just hashed into `id`) so reports
+   * can group every finding about one element together: "these six CSS
+   * properties all drifted on this one heading" is far more useful than six
+   * unrelated rows.
+   */
+  subject?: string | undefined;
+  /**
+   * Distinguishes several findings sharing a subject - the CSS property name,
+   * `size` vs `position` for layout, the meta field. Together with `subject`
+   * this is what makes a finding addressable in a report.
+   */
+  facet?: string | undefined;
   /** One-line human summary. */
   label: string;
   expected?: unknown;

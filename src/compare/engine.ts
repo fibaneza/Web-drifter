@@ -21,6 +21,7 @@ import { compareImages, comparePrices } from './assets.js';
 import { compareContent } from './content.js';
 import { buildPageIndex, compareCoverage, type PagePair } from './coverage.js';
 import { applySuppression, createFinding, severityFor, sortFindings } from './findings.js';
+import { compareLinks } from './links.js';
 import { compareStyles } from './styles.js';
 
 /**
@@ -85,6 +86,15 @@ export async function compareRun(options: CompareRunOptions): Promise<CompareRun
     accumulateCss(css, pageFindings.css);
   }
 
+  const links = await compareLinks(store, sourceIndex, targetIndex, mapping, {
+    checkExternalLinks: config.crawl.checkExternalLinks,
+    concurrency: config.crawl.concurrency * 2,
+    timeoutMs: config.crawl.navigationTimeoutMs,
+    severities,
+    logger,
+  });
+  findings.push(...links.findings);
+
   const suppressed = applySuppression(findings, {
     ignoreFindingIds: config.ignore.findingIds,
     downgradeCategories: config.ignore.categories,
@@ -115,6 +125,7 @@ export async function compareRun(options: CompareRunOptions): Promise<CompareRun
     css,
     findings: sorted,
     pageStats,
+    links: links.stats,
   });
 
   return { findings: sorted, stats, pageStats };
@@ -268,6 +279,7 @@ function buildRunStats(input: {
   css: CssStats;
   findings: readonly Finding[];
   pageStats: readonly PageStats[];
+  links: LinkStats;
 }): RunStats {
   const { options, findings, pageStats } = input;
 
@@ -297,7 +309,7 @@ function buildRunStats(input: {
     images: input.images,
     prices: input.prices,
     css: input.css,
-    links: emptyLinkStats(),
+    links: input.links,
     findings: { total: findings.length, bySeverity, byCategory },
     pages: {
       total: pageStats.length,
@@ -449,18 +461,6 @@ const emptyCssStats = (): CssStats => ({
   styleParity: percentStat(0, 0),
   byViewport: [],
   topProperties: [],
-});
-
-const emptyLinkStats = (): LinkStats => ({
-  totalLinks: 0,
-  internalLinks: 0,
-  externalLinks: 0,
-  checkedLinks: 0,
-  brokenLinks: 0,
-  redirectedLinks: 0,
-  mixedContentLinks: 0,
-  pathMismatches: 0,
-  linkParity: percentStat(0, 0),
 });
 
 const emptyCrawlStats = (): RunStats['crawl']['source'] => ({

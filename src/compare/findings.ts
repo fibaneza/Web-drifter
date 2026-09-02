@@ -68,6 +68,8 @@ export function createFinding(input: FindingInput): Finding {
     ...(input.viewport === undefined ? {} : { viewport: input.viewport }),
     ...(input.region === undefined ? {} : { region: input.region }),
     ...(input.nodeKind === undefined ? {} : { nodeKind: input.nodeKind }),
+    ...(input.subject === undefined ? {} : { subject: input.subject }),
+    ...(input.facet === undefined ? {} : { facet: input.facet }),
     ...(input.expected === undefined ? {} : { expected: input.expected }),
     ...(input.actual === undefined ? {} : { actual: input.actual }),
     ...(input.details === undefined ? {} : { details: input.details }),
