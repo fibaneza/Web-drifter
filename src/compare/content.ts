@@ -7,7 +7,7 @@ import type {
   Region,
   Severity,
 } from '../core/types.js';
-import { REGIONS, percentStat } from '../core/types.js';
+import { REGIONS, kindFamily, percentStat } from '../core/types.js';
 import { trigramSimilarity, truncate } from '../extract/text.js';
 import { align, type AlignedPair } from './align.js';
 import { createFinding, severityFor } from './findings.js';
@@ -53,7 +53,9 @@ export interface ContentCompareResult {
  * wording did not.
  */
 export function nodeSimilarity(a: ContentNode, b: ContentNode): number {
-  if (a.kind !== b.kind) return 0;
+  // Different families never match: a heading becoming a paragraph is a
+  // structural change worth reporting, not a text edit.
+  if (kindFamily(a.kind) !== kindFamily(b.kind)) return 0;
 
   if (a.kind === 'image') {
     const sameAsset = String(a.attrs.src ?? '') === String(b.attrs.src ?? '');
@@ -73,6 +75,11 @@ export function nodeSimilarity(a: ContentNode, b: ContentNode): number {
     // Same words at a different level: the same content, restructured.
     return textScore * 0.9;
   }
+
+  // Within the text family, a tag change (td -> span, li -> p) is exactly the
+  // markup churn a migration produces. Score it just below an exact-tag match
+  // so an identical tag still wins when both are available.
+  if (a.kind !== b.kind) return textScore * 0.98;
 
   return textScore;
 }
@@ -100,9 +107,10 @@ export function compareContent(
     if (sourceNodes.length === 0 && targetNodes.length === 0) continue;
 
     const pairs = align(sourceNodes, targetNodes, {
-      // Kind is part of the anchor key so identical text used as both a heading
-      // and a paragraph cannot anchor them to each other.
-      keyOf: (node) => `${node.kind}:${node.key}`,
+      // The FAMILY is part of the anchor key, not the exact tag: identical text
+      // used as both a heading and a paragraph must not anchor together, but a
+      // table cell and a div carrying the same text must.
+      keyOf: (node) => `${kindFamily(node.kind)}:${node.key}`,
       similarity: nodeSimilarity,
       threshold: options.textSimilarity,
     });
@@ -217,7 +225,10 @@ function classifyPair(
 
 function isIdentical(a: ContentNode, b: ContentNode): boolean {
   if (a.text !== b.text) return false;
-  if (a.kind !== b.kind) return false;
+  // Compared by family, not exact tag: the same words moving from a table cell
+  // to a div is markup churn, not a content change, and reporting it would
+  // flag every line of every table-built page.
+  if (kindFamily(a.kind) !== kindFamily(b.kind)) return false;
 
   switch (a.kind) {
     case 'link':

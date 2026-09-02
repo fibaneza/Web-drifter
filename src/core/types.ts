@@ -37,6 +37,29 @@ export const REGIONS: readonly Region[] = [
 export type NodeKind =
   'heading' | 'paragraph' | 'listItem' | 'link' | 'image' | 'control' | 'tableCell' | 'price';
 
+/**
+ * The comparable family a node kind belongs to.
+ *
+ * `paragraph`, `listItem` and `tableCell` all mean "a block of text" and are
+ * treated as one family, because moving from table layout to semantic markup is
+ * the single most common change in a legacy-to-modern migration. Without this,
+ * `<td>Product name</td>` and `<span>Product name</span>` would never match and
+ * the entire body of every table-built page would report as missing plus added.
+ *
+ * Headings stay distinct (their level is meaningful), as do links, images and
+ * controls, where the kind carries information the text does not.
+ */
+export function kindFamily(kind: NodeKind): string {
+  switch (kind) {
+    case 'paragraph':
+    case 'listItem':
+    case 'tableCell':
+      return 'text';
+    default:
+      return kind;
+  }
+}
+
 /** Kind-specific payload. Every field is optional; presence depends on `kind`. */
 export interface ContentNodeAttrs {
   /** heading: 1-6 */

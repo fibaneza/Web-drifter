@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeText, nodeKey, trigramSimilarity, truncate } from '../../src/extract/text.js';
+import { kindFamily } from '../../src/core/types.js';
 
 describe('normalizeText', () => {
   it('collapses every kind of whitespace, including nbsp', () => {
@@ -56,8 +57,22 @@ describe('nodeKey', () => {
     assert.equal(nodeKey('heading', 'About us'), nodeKey('heading', 'About us'));
   });
 
-  it('separates kinds, so a heading never matches a paragraph', () => {
-    assert.notEqual(nodeKey('heading', 'About us'), nodeKey('paragraph', 'About us'));
+  it('separates families, so a heading never matches body text', () => {
+    assert.notEqual(nodeKey('heading', 'About us'), nodeKey('text', 'About us'));
+  });
+
+  it('gives table cells, list items and paragraphs one identity', () => {
+    // Moving from table layout to semantic markup is the most common change in
+    // a legacy-to-modern migration; it must not read as lost content.
+    assert.equal(
+      nodeKey(kindFamily('tableCell'), 'Steel toolbox'),
+      nodeKey(kindFamily('paragraph'), 'Steel toolbox'),
+    );
+    assert.equal(nodeKey(kindFamily('listItem'), 'Home'), nodeKey(kindFamily('paragraph'), 'Home'));
+    assert.notEqual(
+      nodeKey(kindFamily('heading'), 'Home'),
+      nodeKey(kindFamily('paragraph'), 'Home'),
+    );
   });
 
   it('matches across differently-authored but equivalent markup', () => {

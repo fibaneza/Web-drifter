@@ -235,6 +235,15 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
     return out;
   };
 
+  /** An element's OWN text, excluding anything contributed by descendants. */
+  const directText = (element: Element): string => {
+    let text = '';
+    for (const child of element.childNodes) {
+      if (child.nodeType === 3) text += child.nodeValue ?? '';
+    }
+    return text;
+  };
+
   /* ---------------------------------------------------------------- nodes */
 
   const nodes: RawNode[] = [];
@@ -270,9 +279,25 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
   /** Elements already captured by the block pass, so later passes skip them. */
   const capturedElements = new Set<Element>();
 
+  /**
+   * Elements captured elsewhere in their own right. A container that merely
+   * wraps one of these adds no content of its own.
+   */
+  const CARRIER_SELECTOR = 'a[href], img, button, [role="button"], select, textarea';
+
   for (const element of document.querySelectorAll(BLOCK_SELECTOR)) {
     if (isIgnored(element)) continue;
     if (element.parentElement?.closest(BLOCK_SELECTOR)) continue;
+
+    // A cell or item that only wraps a link or an image contributes nothing of
+    // its own: `<td><a>Home</a></td>` would otherwise record "Home" twice, once
+    // as a table cell and once as a link. That doubling is severe in navigation,
+    // where it makes every item appear both missing AND added once the other
+    // side implements the same nav with different tags.
+    if (directText(element).trim() === '' && element.querySelector(CARRIER_SELECTOR)) {
+      continue;
+    }
+
     capturedElements.add(element);
 
     const tag = element.tagName.toLowerCase();
@@ -314,14 +339,6 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
    * Only DIRECT text is taken (an element's own text nodes, not its
    * descendants'), so a wrapper does not re-report everything nested inside it.
    */
-  const directText = (element: Element): string => {
-    let text = '';
-    for (const child of element.childNodes) {
-      if (child.nodeType === 3) text += child.nodeValue ?? '';
-    }
-    return text;
-  };
-
   const SKIP_GENERIC = new Set([
     'a', // captured as links
     'script',
@@ -335,13 +352,31 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
 
   const CONTROL_SELECTOR = 'button, [role="button"], summary, label, select, textarea';
 
+  /**
+   * True when an ancestor was already captured, so this element's text is
+   * already accounted for.
+   *
+   * Tested against what was ACTUALLY captured, not against the block selector:
+   * a `<li>` that merely wraps an image and some spans is skipped by the block
+   * pass, and its spans must then be captured here. Checking `closest(BLOCK)`
+   * instead would skip them too, silently dropping the text - which is exactly
+   * how a product name inside `<li><img><span>Name</span></li>` disappeared.
+   */
+  const hasCapturedAncestor = (element: Element): boolean => {
+    let parent = element.parentElement;
+    while (parent) {
+      if (capturedElements.has(parent)) return true;
+      parent = parent.parentElement;
+    }
+    return false;
+  };
+
   for (const element of document.querySelectorAll('body *')) {
     if (isIgnored(element) || capturedElements.has(element)) continue;
 
     const tag = element.tagName.toLowerCase();
     if (SKIP_GENERIC.has(tag)) continue;
-    // Already handled by the block pass, or nested inside something that was.
-    if (element.matches(BLOCK_SELECTOR) || element.closest(BLOCK_SELECTOR)) continue;
+    if (hasCapturedAncestor(element)) continue;
     // An anchor's label belongs to the link node, not to a generic text node.
     if (element.closest('a[href]')) continue;
 

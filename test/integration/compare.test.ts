@@ -211,24 +211,62 @@ describe('compare (end to end)', () => {
   });
 
   it('keeps content parity high despite completely unrelated markup', () => {
-    // KNOWN LIMITATION - this baseline should rise to >90% once two structural
-    // sensitivities are fixed. Both are classic Sitecore -> React patterns:
+    // The two fixtures share no markup - tables and `sc-` classes against
+    // semantic HTML5 and BEM - so this number measures how much the model is
+    // fooled by structure. The remaining gap is the drift the fixtures plant on
+    // purpose: a deleted paragraph, an added section, a changed heading, an
+    // extra nav item and a changed price.
     //
-    //  1. `<td><a>Home</a></td>` captures the nav label twice - once as a table
-    //     cell, once as a link - and `<li><a>Home</a></li>` does the same, so
-    //     every nav item reports as BOTH missing and added.
-    //  2. `<td>Name</td>` and `<span>Name</span>` are different node kinds, so
-    //     they never match, even though tables -> divs is the single most
-    //     common change in this kind of migration.
-    //
-    // The threshold records today's measured value so a REGRESSION still fails
-    // the build; raise it as the fixes land.
-    const KNOWN_BASELINE = 65;
+    // Guarding a floor rather than an exact value: this must never silently
+    // regress, but it should be free to improve.
+    const FLOOR = 82;
     assert.ok(
-      stats.content.contentParity.percent > KNOWN_BASELINE,
-      `content parity fell to ${stats.content.contentParity.percent}% ` +
-        `(baseline ${KNOWN_BASELINE}%) - the model became more markup-sensitive`,
+      stats.content.contentParity.percent >= FLOOR,
+      `content parity fell to ${stats.content.contentParity.percent}% (floor ${FLOOR}%) - ` +
+        'the model became more sensitive to markup structure',
     );
+  });
+
+  it('does not report navigation as both missing and added', () => {
+    // A `<td><a>Home</a></td>` nav against a `<li><a>Home</a></li>` nav must
+    // pair up. Capturing the label twice - once as the cell, once as the link -
+    // used to make every nav item appear missing AND added.
+    const navMissing = findings.filter(
+      (f) => f.category === 'content.missing' && f.region === 'nav',
+    );
+    const navAdded = findings.filter((f) => f.category === 'content.added' && f.region === 'nav');
+
+    // The modern nav genuinely swaps "Contact" for "Blog". Those two are real
+    // findings; every other nav item must pair up silently despite the markup
+    // changing from table cells to list items.
+    //
+    // Compared as distinct labels, because the nav appears on every page and a
+    // removed item is legitimately reported once per page.
+    const distinct = (values: unknown[]): string[] => [...new Set(values.map(String))].sort();
+
+    assert.deepEqual(
+      distinct(navMissing.map((f) => f.expected)),
+      ['Contact'],
+      'only the genuinely removed nav item should be reported missing',
+    );
+    assert.deepEqual(
+      distinct(navAdded.map((f) => f.actual)),
+      ['Blog'],
+      'only the genuinely new nav item should be reported added',
+    );
+  });
+
+  it('matches a table cell against a div carrying the same text', () => {
+    // Legacy renders product names in `<td>`, modern in `<span>`. Tables to divs
+    // is the most common change in this kind of migration and must not read as
+    // lost content.
+    const productDrift = findings.filter(
+      (f) =>
+        (f.category === 'content.missing' || f.category === 'content.added') &&
+        f.path === '/products' &&
+        String(f.expected ?? f.actual).includes('toolbox'),
+    );
+    assert.deepEqual(productDrift, [], 'a td -> span tag change was reported as content drift');
   });
 
   /* -------------------------------- stats --------------------------------- */

@@ -10,6 +10,7 @@ import type {
   Region,
   ViewportCapture,
 } from '../core/types.js';
+import { kindFamily } from '../core/types.js';
 import {
   canonicalizeUrl,
   classifyHref,
@@ -112,7 +113,10 @@ export function assembleModel(raw: RawPageModel, options: CaptureModelOptions): 
     // An image node is identified by its asset, not its (often empty) alt text.
     if (text === '' && kind !== 'image') continue;
 
-    const key = nodeKey(kind, kind === 'image' ? String(node.attrs['src'] ?? '') : text);
+    const key = nodeKey(
+      kindFamily(kind),
+      kind === 'image' ? String(node.attrs['src'] ?? '') : text,
+    );
     const identity = `${region}|${key}`;
     const ordinal = ordinals.get(identity) ?? 0;
     ordinals.set(identity, ordinal + 1);
@@ -135,7 +139,7 @@ export function assembleModel(raw: RawPageModel, options: CaptureModelOptions): 
       visible: node.visible,
     });
 
-    hashParts.push(`${region}:${kind}:${text}`);
+    hashParts.push(`${region}:${kindFamily(kind)}:${text}`);
   }
 
   const links = buildLinkRecords(raw, options);
