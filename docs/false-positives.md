@@ -30,6 +30,60 @@ ignore: {
 Run it before you trust a single finding from a real comparison. A clean
 `doctor` means every finding in a real run is a genuine difference.
 
+### What a real noise floor looks like
+
+Measured against `nodejs.org` — a hydrated Next.js site, seven pages at depth 1,
+two viewports, captured twice:
+
+| Category                     | Count | Severity | Verdict                                                       |
+| ---------------------------- | ----- | -------- | ------------------------------------------------------------- |
+| `link.redirect-chain`        | 2     | info     | Real: an i18n prefix strip, and a `current` → `v26.8.1` alias |
+| `page.alias`                 | 1     | info     | Real: `/learn` deduped against `/en/learn`                    |
+| Content, CSS, images, prices | 0     | —        | Clean                                                         |
+
+Zero findings from the content and computed-style comparators across two
+independent captures of a JavaScript-rendered site is the result to aim for; it
+means the readiness gate settled at the same point both times.
+
+The `current` → `v26.8.1` redirect is worth dwelling on. It is genuine
+non-determinism — it changes the day Node ships a release — and it is exactly
+the kind of finding that would otherwise appear in a real run as drift the
+migration did not cause.
+
+## Crawl boundaries are not drift
+
+Worth understanding, because it is the trap this check fell into once already.
+
+A crawl is bounded by `maxDepth`, `maxPages`, `robots.txt` and the
+include/exclude patterns, so **most link destinations are never captured on
+either side**. A page beyond the boundary is not missing; it is unexamined, and
+those are very different claims.
+
+So `link.path-mismatch` accepts two independent kinds of evidence that a route
+survived:
+
+1. The target crawl **captured** the page, or
+2. Some target page still **links to** it.
+
+Either is enough. Requiring the first alone reported every out-of-bounds link as
+a dropped route — 29 errors on a site compared against _itself_, all of them
+paths at depth 2 in a `maxDepth: 1` crawl.
+
+```
+source /a ──link──▶ /deep          /deep is beyond maxDepth.
+target /a ──link──▶ /deep          Neither side captured it.
+
+                                   No evidence of drift. Report nothing.
+```
+
+The general principle: **absence of evidence is not evidence of absence.** A
+comparator that cannot distinguish "the target lacks this" from "we did not
+look" must stay quiet.
+
+Hidden links are treated asymmetrically for the same reason. A hidden link on
+the source is not a promise to the user, so it is never held to parity; a hidden
+link on the _target_ still proves the route exists, so it counts as evidence.
+
 ## What the tool already handles
 
 ### Stabilisation, at capture time

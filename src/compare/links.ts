@@ -88,10 +88,33 @@ export async function compareLinks(
     sourceLinkPaths.set(path, occurrence);
   }
 
+  // Everywhere the target links to, whether or not the crawl went there.
+  //
+  // Load-bearing for the second half of the test below: a crawl is bounded by
+  // maxDepth, maxPages, robots and the include/exclude patterns, so most link
+  // destinations are legitimately never captured on EITHER side. Judging parity
+  // on captured pages alone reports every one of those as a dropped route.
+  //
+  // Hidden target links count here, unlike on the source side. The question
+  // being answered is whether the route survived the migration, and a link in a
+  // collapsed menu still proves it did; whether that link is reachable is a
+  // separate concern with its own category.
+  const targetLinkPaths = new Set<string>();
+  for (const occurrence of internal) {
+    if (occurrence.side !== 'target') continue;
+    if (occurrence.link.path !== null) targetLinkPaths.add(occurrence.link.path);
+  }
+
   let pathMismatches = 0;
   for (const [path, occurrence] of sourceLinkPaths) {
     const expected = mapping.toTarget(path);
+    // Two independent kinds of evidence that the route survived: the target
+    // crawl captured the page, or some target page still links to it. Either
+    // is enough, and requiring both would flag every page beyond the crawl
+    // boundary. Whether the destination actually responds is a different
+    // question, answered by the broken-link check below.
     if (targetIndex.has(expected)) continue;
+    if (targetLinkPaths.has(expected)) continue;
 
     pathMismatches += 1;
     findings.push(
