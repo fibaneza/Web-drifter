@@ -58,8 +58,12 @@ export const crawlSchema = z
     concurrency: z.number().int().positive().max(32).default(4),
     /** Minimum delay between requests to one origin, in ms. */
     politenessDelayMs: z.number().int().min(0).default(0),
-    /** Navigation timeout per page, in ms. */
-    navigationTimeoutMs: z.number().int().positive().default(30_000),
+    /** Navigation timeout per page, in ms. Generous by default: a cold CMS
+     *  page or a hydrating SPA behind a slow API can legitimately take a while,
+     *  and a premature timeout is reported as drift on the whole page. */
+    navigationTimeoutMs: z.number().int().positive().default(45_000),
+    /** Re-attempt a page whose navigation or readiness gate timed out. */
+    retries: z.number().int().min(0).max(5).default(1),
     /**
      * Never render another origin. Leaving this on is what stops the crawler
      * wandering off into the public internet.
@@ -168,7 +172,29 @@ export const stabilizationSchema = z
     /** Quiet period with no DOM mutations and no in-flight requests, in ms. */
     quietMs: z.number().int().positive().default(500),
     /** Hard ceiling on waiting for the page to settle, in ms. */
-    readyTimeoutMs: z.number().int().positive().default(15_000),
+    readyTimeoutMs: z.number().int().positive().default(30_000),
+    /**
+     * Minimum wait after the load event before a page may be declared ready.
+     * Quiescence cannot distinguish "finished rendering" from "not started
+     * yet", so this floor gives a late-hydrating framework time to begin.
+     * Defaults to `quietMs` when omitted.
+     */
+    minWaitMs: z.number().int().min(0).optional(),
+    /**
+     * Per-path timeout overrides for pages known to be slow - report builders,
+     * search result pages, anything fronting a slow upstream. The first
+     * matching entry wins.
+     */
+    slowPages: z
+      .array(
+        z.object({
+          pattern: regexLike,
+          navigationTimeoutMs: z.number().int().positive().optional(),
+          readyTimeoutMs: z.number().int().positive().optional(),
+          quietMs: z.number().int().positive().optional(),
+        }),
+      )
+      .default([]),
     /** Disable CSS animations and transitions before capture. */
     freezeAnimations: z.boolean().default(true),
     /** Pin Date/performance so rendered timestamps are stable. */

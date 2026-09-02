@@ -318,15 +318,185 @@ export interface Finding {
   details?: Record<string, unknown> | undefined;
 }
 
-export interface RunSummary {
+/* -------------------------------------------------------------------------- */
+/* Run statistics                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Headline numbers for a run.
+ *
+ * Every percentage here is a *parity* measure - how much of the source was
+ * faithfully reproduced on the target - so 100% means "no drift detected" and
+ * the number moves in the intuitive direction as a migration is fixed. Each
+ * one names its own denominator, because "coverage" means nothing without it.
+ */
+
+export interface PercentStat {
+  /** Numerator: the part that matched. */
+  matched: number;
+  /** Denominator: the total on the source side. */
+  total: number;
+  /** `matched / total * 100`, rounded to 1dp. 100 when total is 0. */
+  percent: number;
+}
+
+export interface CoverageStats {
+  sourcePages: number;
+  targetPages: number;
+  /** Source pages with a reachable counterpart on the target. */
+  matchedPages: number;
+  missingOnTarget: number;
+  extraOnTarget: number;
+  /** Source pages found to duplicate another source page. */
+  aliasPages: number;
+  /** Pages that answered, but not with the status the source gave. */
+  statusMismatches: number;
+  /** Source pages reachable on target, as a share of all source pages. */
+  pageCoverage: PercentStat;
+}
+
+export interface ContentStats {
+  sourceNodes: number;
+  targetNodes: number;
+  matchedNodes: number;
+  driftedNodes: number;
+  /** Present on source, absent on target. */
+  missingNodes: number;
+  /** Present only on target. */
+  addedNodes: number;
+  reorderedNodes: number;
+  /** Source nodes matched with identical text, as a share of source nodes. */
+  contentParity: PercentStat;
+}
+
+export interface ImageStats {
+  sourceImages: number;
+  targetImages: number;
+  matchedImages: number;
+  missingImages: number;
+  addedImages: number;
+  altDrifts: number;
+  sizeDrifts: number;
+  imageParity: PercentStat;
+}
+
+export interface PriceStats {
+  sourcePrices: number;
+  targetPrices: number;
+  matchedPrices: number;
+  valueDrifts: number;
+  currencyDrifts: number;
+  formatDrifts: number;
+  missingPrices: number;
+  addedPrices: number;
+  /** Prices whose numeric value matched, as a share of source prices. */
+  priceParity: PercentStat;
+}
+
+export interface CssViewportStats {
+  viewport: string;
+  comparedNodes: number;
+  comparedProperties: number;
+  propertyDrifts: number;
+  layoutDrifts: number;
+  visibilityDrifts: number;
+  horizontalOverflowPages: number;
+}
+
+export interface CssStats {
+  comparedNodes: number;
+  /** Total property comparisons performed across all nodes and viewports. */
+  comparedProperties: number;
+  propertyDrifts: number;
+  layoutDrifts: number;
+  visibilityDrifts: number;
+  /** Elements visible on one side but hidden on the other at some viewport. */
+  responsiveVisibilityDrifts: number;
+  /** Property comparisons that agreed, as a share of all comparisons. */
+  styleParity: PercentStat;
+  byViewport: CssViewportStats[];
+  /** Most frequently drifting properties - where to start fixing. */
+  topProperties: Array<{ property: string; count: number }>;
+}
+
+export interface LinkStats {
+  totalLinks: number;
+  internalLinks: number;
+  externalLinks: number;
+  checkedLinks: number;
+  brokenLinks: number;
+  redirectedLinks: number;
+  mixedContentLinks: number;
+  /** Source link paths that also resolve on the target. */
+  pathMismatches: number;
+  linkParity: PercentStat;
+}
+
+/** Per-page roll-up, so reports can be organised and sorted by page. */
+export interface PageStats {
+  path: string;
+  sourceUrl: string | null;
+  targetUrl: string | null;
+  /** True when the page produced no findings at all. */
+  clean: boolean;
+  counts: Record<Severity, number>;
+  countsByCategory: Partial<Record<FindingCategory, number>>;
+  totalFindings: number;
+  /** Set when the readiness gate timed out, so the page is lower confidence. */
+  slowCapture: boolean;
+}
+
+export interface CrawlStats {
+  pagesCaptured: number;
+  pagesFailed: number;
+  /** Pages whose readiness gate timed out - findings there are less reliable. */
+  slowPages: number;
+  aliasesFound: number;
+  /** Why URLs were not crawled, so a missing page can always be explained. */
+  rejected: Record<string, number>;
+  maxDepthReached: number;
+  durationMs: number;
+}
+
+/** The complete statistics payload backing the summary report. */
+export interface RunStats {
   runId: string;
   startedAt: string;
   finishedAt: string;
+  durationMs: number;
   sourceBaseUrl: string;
   targetBaseUrl: string;
-  pagesCrawled: Record<Side, number>;
-  pagesCompared: number;
   viewports: string[];
-  counts: Record<Severity, number>;
-  countsByCategory: Partial<Record<FindingCategory, number>>;
+
+  crawl: Record<Side, CrawlStats>;
+
+  coverage: CoverageStats;
+  content: ContentStats;
+  images: ImageStats;
+  prices: PriceStats;
+  css: CssStats;
+  links: LinkStats;
+
+  findings: {
+    total: number;
+    bySeverity: Record<Severity, number>;
+    byCategory: Partial<Record<FindingCategory, number>>;
+  };
+
+  pages: {
+    total: number;
+    clean: number;
+    withFindings: number;
+    /** Pages with zero findings, as a share of compared pages. */
+    cleanRate: PercentStat;
+  };
+
+  /** Worst-offending pages first, for the "where to start" section. */
+  topPages: PageStats[];
+}
+
+/** Build a {@link PercentStat}, treating an empty denominator as full parity. */
+export function percentStat(matched: number, total: number): PercentStat {
+  const percent = total === 0 ? 100 : Math.round((matched / total) * 1000) / 10;
+  return { matched, total, percent };
 }
