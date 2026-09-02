@@ -15,6 +15,62 @@ function formatZodError(error: z.ZodError): string {
   return `Invalid configuration:\n${lines.join('\n')}`;
 }
 
+/**
+ * Environment overrides.
+ *
+ * A CI pipeline should be able to point the same committed config at a
+ * different pair of environments - a preview deployment, a release candidate -
+ * without rewriting and committing the file. Applied after the file and before
+ * explicit `overrides`, so a CLI flag still wins.
+ */
+const ENV_OVERRIDES: Array<{
+  env: string;
+  apply: (config: Record<string, unknown>, value: string) => void;
+}> = [
+  {
+    env: 'DRIFTER_SOURCE_BASE_URL',
+    apply: (config, value) => {
+      config['source'] = { ...(config['source'] as object), baseUrl: value };
+    },
+  },
+  {
+    env: 'DRIFTER_TARGET_BASE_URL',
+    apply: (config, value) => {
+      config['target'] = { ...(config['target'] as object), baseUrl: value };
+    },
+  },
+  {
+    env: 'DRIFTER_OUT_DIR',
+    apply: (config, value) => {
+      config['output'] = { ...(config['output'] as object), dir: value };
+    },
+  },
+  {
+    env: 'DRIFTER_MAX_PAGES',
+    apply: (config, value) => {
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        config['crawl'] = { ...(config['crawl'] as object), maxPages: parsed };
+      }
+    },
+  },
+];
+
+/** Apply `DRIFTER_*` environment overrides to a raw config object. */
+export function applyEnvOverrides(
+  config: Record<string, unknown>,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, unknown> {
+  const out = { ...config };
+  for (const { env: name, apply } of ENV_OVERRIDES) {
+    const value = env[name];
+    // An empty value is treated as unset: a pipeline parameter left blank
+    // should not blank out the configured URL and fail schema validation.
+    if (value !== undefined && value.trim() !== '') apply(out, value.trim());
+  }
+  return out;
+}
+
 export interface LoadedConfig {
   config: DrifterConfig;
   /** Absolute path of the config file, or null when defaults-only. */
@@ -81,7 +137,10 @@ export async function loadConfig(
     );
   }
 
-  const merged = { ...(result.config as Record<string, unknown>), ...overrides };
+  const merged = {
+    ...applyEnvOverrides(result.config as Record<string, unknown>),
+    ...overrides,
+  };
 
   const parsed = configSchema.safeParse(merged);
   if (!parsed.success) {

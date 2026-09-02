@@ -1,0 +1,153 @@
+# Azure DevOps pipeline for web-drifter.
+#
+# Publishes two things a reviewer can act on without leaving the build:
+#   - the full HTML report, as a downloadable artifact
+#   - junit.xml, so drift appears in the native Tests tab alongside every other
+#     failure rather than as an artifact somebody has to remember to open
+#
+# Reference it from your own azure-pipelines.yml, or copy it in and adjust the
+# variables below.
+
+trigger: none # drift comparison is deliberately not run on every commit
+
+schedules:
+  - cron: '0 6 * * 1-5'
+    displayName: Weekday morning drift check
+    branches:
+      include:
+        - main
+    always: true
+
+parameters:
+  - name: sourceBaseUrl
+    displayName: Legacy site base URL
+    type: string
+    default: ''
+  - name: targetBaseUrl
+    displayName: Modern site base URL
+    type: string
+    default: ''
+  - name: viewports
+    displayName: Viewports to compare
+    type: string
+    default: 'desktop,tablet,mobile-md,mobile-sm'
+  - name: maxPages
+    displayName: Page cap per side
+    type: number
+    default: 500
+  - name: failOnDrift
+    displayName: Fail the build when drift exceeds the budget
+    type: boolean
+    default: true
+
+variables:
+  NODE_VERSION: '22.x'
+  OUT_DIR: '$(Build.ArtifactStagingDirectory)/drifter'
+  # Playwright downloads browsers here; caching it turns a ~40s install into
+  # a few seconds on every subsequent run.
+  PLAYWRIGHT_BROWSERS_PATH: '$(Pipeline.Workspace)/.playwright'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: drift
+    displayName: Compare legacy against modern
+    # A full crawl at four viewports is not a two-minute job.
+    timeoutInMinutes: 120
+
+    steps:
+      - task: NodeTool@0
+        displayName: Use Node $(NODE_VERSION)
+        inputs:
+          versionSpec: '$(NODE_VERSION)'
+
+      - task: Cache@2
+        displayName: Cache npm
+        inputs:
+          key: 'npm | "$(Agent.OS)" | package-lock.json'
+          restoreKeys: |
+            npm | "$(Agent.OS)"
+          path: $(Pipeline.Workspace)/.npm
+
+      - script: npm ci --cache $(Pipeline.Workspace)/.npm --prefer-offline
+        displayName: Install dependencies
+
+      - task: Cache@2
+        displayName: Cache Playwright browsers
+        inputs:
+          # Keyed on the lockfile: Playwright pins an exact browser revision per
+          # release, so a dependency bump must invalidate the cache or the run
+          # fails with a missing-browser error that looks like an infra fault.
+          key: 'playwright | "$(Agent.OS)" | package-lock.json'
+          path: $(PLAYWRIGHT_BROWSERS_PATH)
+          cacheHitVar: PLAYWRIGHT_CACHE_HIT
+
+      - script: npx playwright install --with-deps chromium
+        displayName: Install Chromium
+        condition: ne(variables.PLAYWRIGHT_CACHE_HIT, 'true')
+
+      - script: npm run build
+        displayName: Build
+
+      - script: |
+          set -euo pipefail
+          node dist/cli/index.js run \
+            --out "$(OUT_DIR)" \
+            --viewports "${{ parameters.viewports }}" \
+            --max-pages ${{ parameters.maxPages }} \
+            --log-level info
+        displayName: Run drift comparison
+        env:
+          DRIFTER_SOURCE_BASE_URL: ${{ parameters.sourceBaseUrl }}
+          DRIFTER_TARGET_BASE_URL: ${{ parameters.targetBaseUrl }}
+        # Exit 1 means drift over budget; exit 2 means the tool itself failed.
+        # `continueOnError` keeps the publish steps below running so the report
+        # is available EVEN WHEN the gate fails - which is precisely when
+        # somebody needs to read it. The gate is re-applied at the end.
+        continueOnError: true
+
+      - task: PublishTestResults@2
+        displayName: Publish drift as test results
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: '$(OUT_DIR)/**/junit.xml'
+          testRunTitle: 'web-drifter'
+          # Drift is expected during a migration; the build gate is the
+          # threshold, not the presence of any single failing case.
+          failTaskOnFailedTests: false
+
+      - task: PublishBuildArtifacts@1
+        displayName: Publish the full report
+        condition: succeededOrFailed()
+        inputs:
+          PathtoPublish: '$(OUT_DIR)'
+          ArtifactName: 'drift-report'
+          publishLocation: 'Container'
+
+      - script: |
+          set -euo pipefail
+          SUMMARY=$(find "$(OUT_DIR)" -name summary.md | head -1)
+          if [ -n "$SUMMARY" ]; then
+            echo "##vso[task.uploadsummary]$SUMMARY"
+          fi
+        displayName: Attach summary to the build
+        condition: succeededOrFailed()
+
+      # Re-apply the gate the publish steps deliberately deferred.
+      - script: |
+          set -euo pipefail
+          REPORT=$(find "$(OUT_DIR)" -name report.json | head -1)
+          if [ -z "$REPORT" ]; then
+            echo "##vso[task.logissue type=error]No report was produced - the run failed before comparing."
+            exit 1
+          fi
+          ERRORS=$(node -e "process.stdout.write(String(require('$REPORT').stats.findings.bySeverity.error))")
+          echo "Errors: $ERRORS"
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "##vso[task.logissue type=error]$ERRORS drift error(s). See the drift-report artifact."
+            exit 1
+          fi
+        displayName: Enforce the drift budget
+        condition: and(succeededOrFailed(), eq('${{ parameters.failOnDrift }}', true))
