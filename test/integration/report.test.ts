@@ -246,6 +246,63 @@ describe('report (end to end)', () => {
 
   /* ------------------------------- evidence ------------------------------- */
 
+  it('gives text and price findings evidence, not only CSS ones', () => {
+    // The regression this guards: evidence used to require `details.sourceBox`,
+    // which only the two CSS comparators set, so the findings a migration team
+    // actually acts on could never have a picture.
+    const boxed = findings.filter(
+      (f) => f.details?.['sourceBox'] !== undefined || f.details?.['targetBox'] !== undefined,
+    );
+    const categories = new Set(boxed.map((f) => f.category));
+
+    assert.ok(
+      [...categories].some((category) => category.startsWith('content.')),
+      `no content finding carries geometry; got ${[...categories].join(', ')}`,
+    );
+  });
+
+  it('publishes an evidence gallery with the screenshots already visible', async () => {
+    const html = await read('evidence.html');
+
+    assert.ok(/<img /.test(html), 'the gallery shows no images');
+    // Findings are collapsed everywhere else so a long report stays scannable,
+    // which is precisely why the gallery has to open its own cards.
+    assert.ok(/<details[^>]* open>/.test(html), 'gallery cards are collapsed');
+  });
+
+  it('marks findings that have screenshots so they can be found', async () => {
+    const html = await read('index.html');
+
+    assert.ok(/data-evidence="1"/.test(html), 'no finding is marked as having evidence');
+    assert.ok(/badge shot/.test(html), 'no visible badge on a finding with evidence');
+    assert.ok(/id="filter-evidence"/.test(html), 'no way to filter to findings with evidence');
+  });
+
+  it('shows findings on the overview, not only statistics', async () => {
+    // Opening index.html used to show stats and nothing else, so the first page
+    // anyone looked at contained no findings and therefore no screenshots.
+    const html = await read('index.html');
+    assert.ok(/class="finding"/.test(html), 'the overview lists no findings');
+  });
+
+  it('grades CSS by magnitude and never raises it to an error', () => {
+    const css = findings.filter((f) => f.category.startsWith('css.'));
+    assert.ok(css.length > 0, 'the fixture pair should produce CSS drift');
+
+    const graded = css.filter((f) => typeof f.details?.['magnitude'] === 'number');
+    assert.ok(graded.length > 0, 'no CSS finding carries a magnitude');
+
+    // Visibility loss is exempt in both its forms: an element that vanished is a
+    // missing component, not a styling opinion, so it stays an error.
+    const visibilityLoss = new Set(['css.visibility-drift', 'css.responsive-visibility-drift']);
+    const errors = css.filter((f) => f.severity === 'error' && !visibilityLoss.has(f.category));
+    assert.deepEqual(
+      errors.map((f) => f.category),
+      [],
+      'styling must not be able to fail a build on its own',
+    );
+  });
+
   it('crops screenshot evidence for findings that carry geometry', async () => {
     assert.ok(result.evidenceCount > 0, 'no screenshot evidence was generated');
 

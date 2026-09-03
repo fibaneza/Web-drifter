@@ -28,7 +28,15 @@ export interface FindingRenderOptions {
   showPath?: boolean;
   /** Show which viewport (off on a single-device view). */
   showViewport?: boolean;
+  /** Source path -> target path, so a card can show both sides host-free. */
+  targetPathOf?: (sourcePath: string) => string;
+  /** Render the card already open. Used by the evidence gallery. */
+  open?: boolean;
 }
+
+/** Marks a card that has screenshots, so it is visible without opening it. */
+const EVIDENCE_BADGE =
+  '<span class="badge shot" title="Has screenshot evidence" aria-label="Has screenshot evidence">&#9673; shot</span>';
 
 export function renderFinding(finding: Finding, options: FindingRenderOptions): string {
   const searchable = [
@@ -41,29 +49,54 @@ export function renderFinding(finding: Finding, options: FindingRenderOptions): 
     toText(finding.actual),
   ].join(' ');
 
+  const hasEvidence = options.evidence?.has(finding.id) === true;
+
   const tags: string[] = [severityBadge(finding.severity)];
   if (options.showViewport !== false && finding.viewport) {
     tags.push(`<span class="badge info">${escapeHtml(finding.viewport)}</span>`);
   }
+  if (hasEvidence) tags.push(EVIDENCE_BADGE);
 
   const meta: string[] = [`<code>${escapeHtml(finding.category)}</code>`];
-  if (options.showPath !== false) meta.push(`<code>${escapeHtml(finding.path)}</code>`);
+  if (options.showPath !== false) meta.push(renderPathPair(finding, options));
   if (finding.region) meta.push(escapeHtml(finding.region));
 
   return `<details class="finding" data-filterable data-severity="${escapeAttr(
     finding.severity,
-  )}" data-search="${escapeAttr(searchable)}">
+  )}" data-evidence="${hasEvidence ? '1' : '0'}" data-search="${escapeAttr(searchable)}"${
+    options.open ? ' open' : ''
+  }>
   <summary>
     ${tags.join(' ')}
     <span class="title">${escapeHtml(finding.label)}</span>
-    <span class="muted mono">${meta.join(' · ')}</span>
+    <span class="muted mono">${meta.join(' \u00b7 ')}</span>
   </summary>
   <div class="body">
     ${renderExpectedActual(finding)}
-    ${renderDetails(finding)}
+    ${renderDetails(finding, options)}
     ${renderEvidence(finding, options)}
   </div>
 </details>`;
+}
+
+/**
+ * Source path against target path, without the host.
+ *
+ * The host always differs - that is the premise of the whole exercise - so
+ * showing it buries the part that matters. Query parameters are kept: they are
+ * part of a page's identity here, so `/search?q=hat` and `/search?q=boot` are
+ * different pages and the report has to say which one it means.
+ */
+function renderPathPair(finding: Finding, options: FindingRenderOptions): string {
+  const targetPath = options.targetPathOf?.(finding.path);
+  if (targetPath === undefined || targetPath === finding.path) {
+    return `<code>${escapeHtml(finding.path)}</code>`;
+  }
+  // A remapped path is worth pointing at: it is a deliberate migration decision
+  // and the commonest reason a page looks "missing" when it is only moved.
+  return `<code>${escapeHtml(finding.path)}</code> <span class="arrow">\u2192</span> <code class="remapped">${escapeHtml(
+    targetPath,
+  )}</code>`;
 }
 
 function renderExpectedActual(finding: Finding): string {
@@ -78,11 +111,34 @@ function renderExpectedActual(finding: Finding): string {
 </div>`;
 }
 
-function renderDetails(finding: Finding): string {
+function renderDetails(finding: Finding, options: FindingRenderOptions): string {
   const rows: Array<[string, string]> = [];
+
+  const targetPath = options.targetPathOf?.(finding.path);
+  rows.push([
+    'Path',
+    targetPath === undefined || targetPath === finding.path
+      ? `<code>${escapeHtml(finding.path)}</code>`
+      : `<code>${escapeHtml(finding.path)}</code> \u2192 <code>${escapeHtml(targetPath)}</code>`,
+  ]);
 
   if (finding.subject) rows.push(['Element', `<code>${escapeHtml(finding.subject)}</code>`]);
   if (finding.facet) rows.push(['Property', `<code>${escapeHtml(finding.facet)}</code>`]);
+
+  const where = renderLocation(finding);
+  if (where) rows.push(['On the page', where]);
+
+  const magnitude = finding.details?.['magnitude'];
+  if (typeof magnitude === 'number') {
+    // Stated as a multiple of the warning threshold, because the raw number is
+    // meaningless without knowing what it is being measured against.
+    rows.push([
+      'Size of drift',
+      `${magnitude}\u00d7 the warning threshold ${
+        magnitude >= 1 ? '<span class="muted">(over)</span>' : '<span class="muted">(under)</span>'
+      }`,
+    ]);
+  }
 
   const hint = finding.details?.['selectorHint'];
   if (typeof hint === 'string' && hint !== '') {
@@ -95,8 +151,8 @@ function renderDetails(finding: Finding): string {
     rows.push(['Confidence', `${Math.round(finding.confidence * 100)}% element match`]);
   }
 
-  if (finding.sourceUrl) rows.push(['Source URL', link(finding.sourceUrl)]);
-  if (finding.targetUrl) rows.push(['Target URL', link(finding.targetUrl)]);
+  if (finding.sourceUrl) rows.push(['Source URL', link(deepLink(finding, 'source'))]);
+  if (finding.targetUrl) rows.push(['Target URL', link(deepLink(finding, 'target'))]);
   rows.push([
     'Finding id',
     `<code>${escapeHtml(finding.id)}</code> <span class="muted">(use in <code>ignore.findingIds</code> to accept)</span>`,
@@ -109,6 +165,41 @@ function renderDetails(finding: Finding): string {
 
 function link(url: string): string {
   return `<a href="${escapeAttr(url)}" rel="noreferrer noopener">${escapeHtml(url)}</a>`;
+}
+
+/** Where on the rendered page this finding is, in CSS pixels. */
+function renderLocation(finding: Finding): string | null {
+  const box = finding.details?.['sourceBox'] ?? finding.details?.['targetBox'];
+  if (!box || typeof box !== 'object') return null;
+
+  const { x, y, width, height } = box as Record<string, unknown>;
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (typeof width !== 'number' || typeof height !== 'number') return null;
+
+  return `<code>${Math.round(x)}, ${Math.round(y)}</code> <span class="muted">(${Math.round(
+    width,
+  )}\u00d7${Math.round(height)} px from the top-left of the page)</span>`;
+}
+
+/**
+ * Link that opens the live page scrolled to the finding.
+ *
+ * Uses a text fragment, which Chromium and Edge scroll to and highlight. Nothing
+ * is lost elsewhere: a browser that does not understand the fragment ignores it
+ * and opens the page normally. Only text worth searching for is used - a couple
+ * of words match too much of the page to be useful.
+ */
+function deepLink(finding: Finding, side: 'source' | 'target'): string {
+  const url = side === 'source' ? finding.sourceUrl : finding.targetUrl;
+  if (!url) return '';
+
+  const value = side === 'source' ? finding.expected : finding.actual;
+  if (typeof value !== 'string') return url;
+
+  const snippet = value.trim().slice(0, 120);
+  if (snippet.length < 8 || url.includes('#')) return url;
+
+  return `${url}#:~:text=${encodeURIComponent(snippet)}`;
 }
 
 function renderEvidence(finding: Finding, options: FindingRenderOptions): string {

@@ -158,12 +158,57 @@ export function applySuppression(
   return out;
 }
 
-/** Sort most serious first, then by page, so a report reads top-down. */
+/**
+ * What a migration team fixes first, within a severity.
+ *
+ * Wrong text and wrong prices are what a visitor notices and what costs money;
+ * a missing page or component is next. Styling comes last - some of it is
+ * intentional in a redesign, and none of it is worth reading before the content
+ * is right. Ranking by this rather than alphabetically by category is the
+ * difference between a report that opens on the pricing bug and one that opens
+ * on a 3px margin.
+ */
+const CATEGORY_PRIORITY: Partial<Record<FindingCategory, number>> = {
+  'price.value-drift': 0,
+  'price.currency-drift': 0,
+  'price.missing': 1,
+  'price.added': 1,
+  'content.drift': 1,
+  'content.missing': 2,
+  'content.added': 2,
+  'image.missing': 2,
+  'image.added': 3,
+  'page.missing-on-target': 2,
+  'page.status-mismatch': 2,
+  'page.extra-on-target': 3,
+  'link.broken': 3,
+  'link.path-mismatch': 3,
+};
+const DEFAULT_PRIORITY = 5;
+/** Styling ranks below everything else, whatever its severity band. */
+const CSS_PRIORITY = 8;
+
+function priorityOf(category: FindingCategory): number {
+  return (
+    CATEGORY_PRIORITY[category] ?? (category.startsWith('css.') ? CSS_PRIORITY : DEFAULT_PRIORITY)
+  );
+}
+
+/** How big a graded drift is, for ranking. Ungraded findings sort as average. */
+function magnitudeOf(finding: Finding): number {
+  const magnitude = finding.details?.['magnitude'];
+  return typeof magnitude === 'number' ? magnitude : 1;
+}
+
+/** Sort most serious first, then by what is worth fixing first, so a report reads top-down. */
 export function sortFindings(findings: readonly Finding[]): Finding[] {
   const rank: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
   return [...findings].sort(
     (a, b) =>
       rank[a.severity] - rank[b.severity] ||
+      priorityOf(a.category) - priorityOf(b.category) ||
+      // Bigger drifts first: "show me the blatant ones" is the common request.
+      magnitudeOf(b) - magnitudeOf(a) ||
       a.path.localeCompare(b.path) ||
       a.category.localeCompare(b.category) ||
       a.id.localeCompare(b.id),

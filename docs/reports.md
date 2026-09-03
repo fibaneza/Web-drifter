@@ -122,3 +122,53 @@ means nothing without one.
 
 Plus per-viewport CSS breakdowns, the most frequently drifting properties
 (where to start fixing), and the worst-offending pages.
+
+## Screenshot evidence
+
+Findings that have a known position on the page carry crops of the element, cut
+from the stored full-page captures. Three ways to reach them:
+
+| Where                              | What you get                                                            |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| **Evidence** in the nav            | Every finding that has screenshots, grouped by page, cards already open |
+| A **&#9673; shot** badge on a card | That finding has images; open it to see them                            |
+| **With screenshot** filter         | Narrows any list to findings that have evidence                         |
+
+Crops are cut for findings at or above `output.evidenceMinSeverity`, which
+defaults to `error`. That covers text drift, missing text, missing images, wrong
+prices and missing pages. Set it to `warning` to also crop extra components and
+CSS drift:
+
+```ts
+output: {
+  evidenceMinSeverity: 'warning',   // 'error' (default) | 'warning' | 'info'
+}
+```
+
+Because CSS is graded no higher than a warning (see
+[CSS comparison](css-comparison.md)), **CSS findings get no crops under the
+default**. That is deliberate: cropping is the slowest part of writing a report,
+and styling drift is rarely what someone opens the report to look at. One line
+brings it back.
+
+Evidence lands in `assets/shots/<page>/<viewport>/<finding-id>-{source,target,diff}.png`.
+A one-sided crop is normal and meaningful: source-only shows what should be
+there, target-only shows what appeared.
+
+> The pixel overlay illustrates a finding that content comparison already
+> proved. Nothing is ever reported _because_ pixels differ.
+
+## Getting from a finding to the page
+
+Each finding shows, host-free, the source path and the target path it maps to,
+with query parameters intact — those are part of a page's identity here, so
+`/search?q=hat` and `/search?q=boot` are different pages.
+
+Where a finding is about text, the Source and Target URLs are
+[text-fragment](https://developer.mozilla.org/en-US/docs/Web/URI/Fragment/Text_fragments)
+links: opening one scrolls the live page to the drifted text and highlights it.
+Browsers that do not support text fragments open the page normally, so nothing
+is lost.
+
+Findings that carry geometry also state where the element sits, in CSS pixels
+from the top-left of the page.

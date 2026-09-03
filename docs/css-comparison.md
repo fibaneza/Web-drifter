@@ -144,3 +144,60 @@ ignore: {
 `css-report.html` gives the whole picture and links to `css/<device>.html` for
 one screen size at a time. The **most frequently drifting properties** table is
 the place to start: one root cause usually explains a whole column.
+
+## Severity is graded by distance
+
+A report where a 1px nudge and a redesign read identically gets ignored
+wholesale, so CSS findings are banded by how big the difference actually is.
+
+Each graded finding carries `details.magnitude`: one unitless number, across
+colour, length and geometry, measured against the threshold that makes a drift a
+warning. **At or above 1 is a warning; below it is information.**
+
+| Family                              | Distance                                   | Warning at                                             |
+| ----------------------------------- | ------------------------------------------ | ------------------------------------------------------ |
+| Colour                              | Perceptual delta (CIE Lab, via `colord`)   | `thresholds.cssColorDeltaWarn` (0.03)                  |
+| Length — font-size, margin, padding | Larger of the absolute and relative change | `cssLengthWarnPx` (4) or `cssLengthWarnPercent` (0.15) |
+| Geometry                            | Largest shift in a gated dimension         | `cssGeometryWarnFactor` (2) × the tolerance in force   |
+
+The length family takes the _larger_ of the two measures, which is what stops
+3px reading the same on a 12px caption as on a 48px heading.
+
+Geometry is expressed as a multiple of the tolerance rather than a pixel count
+because the tolerance itself scales with viewport width. A fixed threshold would
+sit below the reporting gate at 1440px and above it on a phone, making the
+information band unreachable at one end or the other.
+
+### Colour has a tolerance now
+
+Colours used to be compared as strings, so `rgb(0,0,0)` against `rgb(1,1,1)` —
+which nobody can see and every rewrite produces — reported identically to black
+against white. Anything below `thresholds.cssColorTolerance` (0.01, roughly the
+threshold of human vision) is no longer reported at all.
+
+Calibration, measured:
+
+| Pair                                                    | Distance |
+| ------------------------------------------------------- | -------- |
+| `rgb(0,0,0)` vs `rgb(1,1,1)` — imperceptible            | 0.002    |
+| `rgb(26,29,33)` vs `rgb(40,44,50)` — subtle but visible | 0.048    |
+| Blue vs red                                             | 0.469    |
+| Black vs white                                          | 1.000    |
+
+### CSS never becomes an error
+
+Whatever the magnitude, a styling drift is capped at `warning`, so CSS alone can
+never fail a build through `thresholds.failOn.error`. Some restyling is
+intentional in a rewrite, and a gate that fails on a shifted margin gets switched
+off on day one — at which point it catches nothing at all.
+
+Two exceptions, and they are not really styling: `css.visibility-drift` and
+`css.responsive-visibility-drift` stay errors. An element that vanished is a
+missing component.
+
+An explicit override in config still wins outright, so the escape hatch is
+honest:
+
+```ts
+severities: { 'css.property-drift': 'error' },   // gates on styling once the migration is close
+```

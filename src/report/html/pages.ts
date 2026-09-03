@@ -31,6 +31,8 @@ import {
 export interface RenderContext {
   model: ReportModel;
   evidence: EvidenceIndex;
+  /** Source path -> target path, so every card can show both sides host-free. */
+  targetPathOf: (sourcePath: string) => string;
 }
 
 export const pageHref = (path: string): string => `pages/${pathSlug(path)}.html`;
@@ -136,12 +138,44 @@ export function renderOverview(context: RenderContext): string {
   </table></div>
 </section>`;
 
+  // The overview used to render statistics and nothing else, so the first page
+  // anyone opened showed no findings at all - and, since evidence lives on a
+  // finding, no screenshots either. These are the rows worth reading first.
+  const worst = model.findings.slice(0, 15);
+  const evidenceCount = model.findings.filter((f) => context.evidence.has(f.id)).length;
+
+  const top = `<section>
+  <h2>Worst findings</h2>
+  <p class="muted">
+    Most serious first, then by what is worth fixing first: prices and text before styling.
+    ${
+      evidenceCount > 0
+        ? `${evidenceCount} findings in this run have screenshots \u2014 see <a href="evidence.html">Evidence</a>.`
+        : ''
+    }
+  </p>
+  ${
+    worst.length === 0
+      ? emptyState('No findings. The target matches the source everywhere it was compared.')
+      : renderFindingList(worst, {
+          root: '',
+          evidence: context.evidence,
+          targetPathOf: context.targetPathOf,
+        })
+  }
+  ${
+    model.findings.length > worst.length
+      ? `<p class="muted">Showing ${worst.length} of ${model.findings.length}. <a href="pages/index.html">Browse by page</a>.</p>`
+      : ''
+  }
+</section>`;
+
   return renderLayout({
     title: 'web-drifter report',
     subtitle: `${stats.sourceBaseUrl} → ${stats.targetBaseUrl} · ${stats.viewports.join(', ')}`,
     root: '',
     nav: standardNav('', 'Overview'),
-    body: headline + parity + coverage + matrix + devices + topProperties + categories,
+    body: headline + parity + top + coverage + matrix + devices + topProperties + categories,
   });
 }
 
@@ -189,7 +223,12 @@ export function renderPageIndex(context: RenderContext): string {
 }
 
 export function renderPageDetail(page: PageReport, context: RenderContext): string {
-  const options = { root: '../', evidence: context.evidence, showPath: false as const };
+  const options = {
+    root: '../',
+    evidence: context.evidence,
+    targetPathOf: context.targetPathOf,
+    showPath: false as const,
+  };
 
   const shared = `<section>
   <h2>Content, images, prices and links</h2>
@@ -237,11 +276,86 @@ export function renderPageDetail(page: PageReport, context: RenderContext): stri
 }
 
 /* -------------------------------------------------------------------------- */
+/* Evidence gallery                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every finding that has a screenshot, in one place, already open.
+ *
+ * The per-page and per-device views answer "what is wrong here?"; this answers
+ * "show me the pictures". Findings elsewhere are collapsed so a report of
+ * hundreds of rows stays scannable, which also means the evidence is invisible
+ * until something is clicked - so the gallery opens its cards.
+ */
+export function renderEvidenceReport(context: RenderContext): string {
+  const { model, evidence } = context;
+
+  const withEvidence = model.findings.filter((finding) => evidence.has(finding.id));
+
+  const byPath = new Map<string, typeof withEvidence>();
+  for (const finding of withEvidence) {
+    const bucket = byPath.get(finding.path);
+    if (bucket) bucket.push(finding);
+    else byPath.set(finding.path, [finding]);
+  }
+
+  const sections = [...byPath]
+    .map(
+      ([path, findings]) => `<section>
+  <h2><a href="${escapeAttr(pageHref(path))}">${escapeHtml(path)}</a> <span class="muted">(${
+    findings.length
+  })</span></h2>
+  ${findings
+    .map((finding) =>
+      renderFinding(finding, {
+        root: '',
+        evidence,
+        targetPathOf: context.targetPathOf,
+        open: true,
+      }),
+    )
+    .join('\n')}
+</section>`,
+    )
+    .join('\n');
+
+  const body =
+    withEvidence.length === 0
+      ? emptyState(
+          'No screenshot evidence in this run. Evidence is cut for findings at or above ' +
+            '`output.evidenceMinSeverity` (default `error`) that have a known position on the ' +
+            'page; lower that setting, or check the crawl captured screenshots.',
+        )
+      : `<section class="panel">
+  <p class="muted">
+    Source and target crops of the element each finding is about, cut from the stored
+    full-page captures. Where both sides exist there is also a pixel overlay - it illustrates
+    a finding that was already proven by comparing content, never the reason for one.
+  </p>
+</section>
+${filterControls()}
+${sections}`;
+
+  return renderLayout({
+    title: 'Evidence',
+    subtitle: `${withEvidence.length} findings with screenshots`,
+    root: '',
+    nav: standardNav('', 'Evidence'),
+    body,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* Device detail                                                              */
 /* -------------------------------------------------------------------------- */
 
 export function renderDeviceDetail(device: DeviceReport, context: RenderContext): string {
-  const options = { root: '../../', evidence: context.evidence, showViewport: false as const };
+  const options = {
+    root: '../../',
+    evidence: context.evidence,
+    targetPathOf: context.targetPathOf,
+    showViewport: false as const,
+  };
 
   const sections = [...device.byPath.entries()]
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
@@ -323,7 +437,11 @@ ${perViewport}
 <section>
   <h2>All CSS findings</h2>
   ${filterControls()}
-  ${renderFindingList(model.css, { root: '', evidence: context.evidence })}
+  ${renderFindingList(model.css, {
+    root: '',
+    evidence: context.evidence,
+    targetPathOf: context.targetPathOf,
+  })}
 </section>`;
 
   return renderLayout({
@@ -345,6 +463,7 @@ export function renderCssDeviceReport(viewport: string, context: RenderContext):
     body: `<section>${filterControls()}${renderFindingList(findings, {
       root: '../',
       evidence: context.evidence,
+      targetPathOf: context.targetPathOf,
       showViewport: false,
     })}</section>`,
   });
@@ -371,7 +490,7 @@ export function renderLinksReport(context: RenderContext): string {
 <section>
   <h2>Findings</h2>
   ${filterControls()}
-  ${renderFindingList(context.model.links, { root: '' })}
+  ${renderFindingList(context.model.links, { root: '', evidence: context.evidence, targetPathOf: context.targetPathOf })}
 </section>`;
 
   return renderLayout({
@@ -399,7 +518,7 @@ export function renderCoverageReport(context: RenderContext): string {
 <section>
   <h2>Findings</h2>
   ${filterControls()}
-  ${renderFindingList(context.model.coverage, { root: '' })}
+  ${renderFindingList(context.model.coverage, { root: '', evidence: context.evidence, targetPathOf: context.targetPathOf })}
 </section>`;
 
   return renderLayout({

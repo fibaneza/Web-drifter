@@ -21,6 +21,7 @@ import {
   renderCssReport,
   renderDeviceDetail,
   renderLinksReport,
+  renderEvidenceReport,
   renderOverview,
   renderPageDetail,
   renderPageIndex,
@@ -130,10 +131,19 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
   }
 
   if (formats.has('html')) {
-    const context = { model, evidence };
+    // The two sites differ by host by definition, so every path shown in the
+    // report is host-free; this is what lets a card say which target path a
+    // source path is expected at.
+    const pathMapping = createPathMapping(config.urlMapping);
+    const context = {
+      model,
+      evidence,
+      targetPathOf: (sourcePath: string): string => pathMapping.toTarget(sourcePath),
+    };
 
     files.push(
       ['index.html', renderOverview(context)],
+      ['evidence.html', renderEvidenceReport(context)],
       ['css-report.html', renderCssReport(context)],
       ['links-report.html', renderLinksReport(context)],
       ['coverage-report.html', renderCoverageReport(context)],

@@ -169,7 +169,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .shots figure { margin: 0; }
 .shots figcaption { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .shots img { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.badge.shot { background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+.arrow { color: var(--muted); }
+code.remapped { color: var(--ink); border-bottom: 1px dotted var(--muted); }
+.shotcard { margin-bottom: 14px; }
+.shotcard > summary { cursor: default; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+.controls label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
 .controls input, .controls select {
   font: inherit; font-size: 14px; padding: 6px 9px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel); color: var(--ink);
@@ -184,16 +190,20 @@ const FILTER_SCRIPT = `
 (function () {
   var search = document.getElementById('filter-text');
   var severity = document.getElementById('filter-severity');
-  if (!search && !severity) return;
+  var shots = document.getElementById('filter-evidence');
+  if (!search && !severity && !shots) return;
 
   function apply() {
     var term = (search && search.value || '').toLowerCase();
     var sev = severity && severity.value || '';
+    var onlyShots = shots && shots.checked;
     var shown = 0;
     document.querySelectorAll('[data-filterable]').forEach(function (row) {
       var haystack = (row.getAttribute('data-search') || row.textContent || '').toLowerCase();
       var rowSev = row.getAttribute('data-severity') || '';
-      var ok = (!term || haystack.indexOf(term) !== -1) && (!sev || rowSev === sev);
+      var ok = (!term || haystack.indexOf(term) !== -1) &&
+               (!sev || rowSev === sev) &&
+               (!onlyShots || row.getAttribute('data-evidence') === '1');
       row.hidden = !ok;
       if (ok) shown++;
     });
@@ -203,6 +213,7 @@ const FILTER_SCRIPT = `
 
   if (search) search.addEventListener('input', apply);
   if (severity) severity.addEventListener('change', apply);
+  if (shots) shots.addEventListener('change', apply);
   apply();
 })();
 `;
@@ -244,6 +255,7 @@ export function standardNav(root: string, current: string): NavLink[] {
   const links: Array<[string, string]> = [
     [`${root}index.html`, 'Overview'],
     [`${root}pages/index.html`, 'By page'],
+    [`${root}evidence.html`, 'Evidence'],
     [`${root}css-report.html`, 'CSS'],
     [`${root}links-report.html`, 'Links'],
     [`${root}coverage-report.html`, 'Coverage'],
@@ -265,6 +277,7 @@ export function filterControls(): string {
     <option value="warning">Warnings</option>
     <option value="info">Info</option>
   </select>
+  <label class="check"><input id="filter-evidence" type="checkbox"> With screenshot</label>
   <span id="filter-count" class="muted"></span>
 </div>`;
 }
