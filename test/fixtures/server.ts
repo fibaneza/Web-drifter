@@ -66,8 +66,10 @@ export async function startFixtureServer(options: FixtureServerOptions): Promise
 
       const extra = extraRoutes[pathname];
       if (extra !== undefined) {
+        // Content type follows the extension, so a route can serve a sitemap or
+        // a JSON feed as itself rather than as HTML.
         res.writeHead(200, {
-          'content-type': CONTENT_TYPES['.html'] ?? 'text/html',
+          'content-type': CONTENT_TYPES[extname(pathname)] ?? CONTENT_TYPES['.html'] ?? 'text/html',
           'cache-control': 'no-store',
         });
         res.end(extra);
