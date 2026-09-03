@@ -1,15 +1,24 @@
 #!/usr/bin/env node
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError } from 'commander';
 import { loadConfig } from '../config/load.js';
 import type { DrifterConfig } from '../config/schema.js';
-import { ConfigError, DrifterError, toMessage } from '../core/errors.js';
+import { ConfigError, DrifterError, StoreError, toMessage } from '../core/errors.js';
 import { createLogger, type LogLevel, type Logger } from '../core/logger.js';
-import type { Side } from '../core/types.js';
+import type { Finding, Severity, Side } from '../core/types.js';
 import { compareRun } from '../compare/engine.js';
 import { runAll, runCrawl, runReportStage, toSelfComparisonConfig } from '../pipeline.js';
+import {
+  atOrAbove,
+  countBySeverity,
+  diffRuns,
+  type ReportFile,
+  type RunDiff,
+} from '../report/diff.js';
+import { renderDiffMarkdown } from '../report/diff-markdown.js';
 import { exitCodeFor, summarise } from '../report/write.js';
-import { ArtifactStore, formatBytes } from '../store/artifact-store.js';
+import { ArtifactStore, formatBytes, listRuns } from '../store/artifact-store.js';
 import { writeInitConfig } from './init.js';
 
 /**
@@ -28,7 +37,10 @@ import { writeInitConfig } from './init.js';
  */
 
 const EXIT_OK = 0;
-// Exit code 1 (drift over budget) is produced by `exitCodeFor`, not here.
+// `run` and `compare` reach this through `exitCodeFor`, which weighs the whole
+// run against its budget; `diff` returns it directly, because a regression
+// against the previous run is a budget of its own.
+const EXIT_DRIFT = 1;
 const EXIT_ERROR = 2;
 
 interface GlobalOptions {
@@ -250,6 +262,163 @@ program
       return EXIT_OK;
     });
   });
+
+/* ------------------------------------------------------------------ diff -- */
+
+program
+  .command('diff')
+  .description('compare two stored runs and report what is new, fixed or changed')
+  .option('--since <id>', 'baseline run id (defaults to the run before --run)')
+  .option('--run <id>', 'current run id (defaults to the most recent)')
+  .option('--fail-on <severity>', 'new findings at or above this fail the command', 'error')
+  .option('--no-fail', 'report only; never exit non-zero')
+  .action(async (options: { since?: string; run?: string; failOn: string; fail: boolean }) => {
+    await run(async (logger) => {
+      const config = await resolveConfig(program.opts<GlobalOptions>());
+      const floor = asSeverity(options.failOn);
+
+      const { baselineId, currentId } = await resolveRunPair(
+        config.output.dir,
+        options.since,
+        options.run,
+      );
+
+      const [baseline, current] = await Promise.all([
+        ArtifactStore.open(config.output.dir, baselineId),
+        ArtifactStore.open(config.output.dir, currentId),
+      ]);
+
+      const [baselineReport, currentReport] = await Promise.all([
+        readReport(baseline, baselineId),
+        readReport(current, currentId),
+      ]);
+
+      logger.info({ baseline: baselineId, current: currentId }, 'comparing runs');
+      const diff = diffRuns(baselineReport, currentReport);
+
+      // Written into the CURRENT run, so a run directory stays the one place
+      // holding everything known about that run.
+      await current.writeJson('diff.json', diff);
+      await current.writeText('diff.md', `${renderDiffMarkdown(diff)}\n`);
+
+      const gating = atOrAbove(diff.added, floor);
+      printDiff(diff, gating, floor, join(current.dir, 'diff.md'));
+
+      // `--no-fail` makes this a diagnostic like `doctor`, rather than a gate.
+      if (!options.fail || gating.length === 0) return EXIT_OK;
+      return EXIT_DRIFT;
+    });
+  });
+
+/**
+ * Which two runs to compare.
+ *
+ * With no flags this is "the two most recent", which is the question people
+ * actually ask - did the last change help? A baseline is only defaulted when one
+ * exists; comparing a first run against nothing is a mistake worth naming rather
+ * than silently reporting every finding as new.
+ */
+async function resolveRunPair(
+  baseDir: string,
+  since: string | undefined,
+  runId: string | undefined,
+): Promise<{ baselineId: string; currentId: string }> {
+  const runs = await listRuns(baseDir);
+  if (runs.length === 0) {
+    throw new StoreError(`No runs found in ${baseDir}. Run \`drifter run\` first.`);
+  }
+
+  const currentId = runId ?? runs.at(-1);
+  if (currentId === undefined || !runs.includes(currentId)) {
+    throw new StoreError(`Run ${String(runId)} not found in ${baseDir}.`);
+  }
+
+  if (since !== undefined) {
+    if (!runs.includes(since)) throw new StoreError(`Run ${since} not found in ${baseDir}.`);
+    if (since === currentId) {
+      throw new StoreError('--since and --run name the same run; there is nothing to compare.');
+    }
+    return { baselineId: since, currentId };
+  }
+
+  const previous = runs[runs.indexOf(currentId) - 1];
+  if (previous === undefined) {
+    throw new StoreError(
+      `Run ${currentId} is the earliest stored run, so there is no baseline to compare it ` +
+        'against. Run `drifter run` again, or name a baseline with --since.',
+    );
+  }
+  return { baselineId: previous, currentId };
+}
+
+/** A run with no `report.json` cannot be compared, and it is worth saying why. */
+async function readReport(store: ArtifactStore, runId: string): Promise<ReportFile> {
+  const report = await store.readJson<ReportFile>('report.json');
+  if (!report) {
+    throw new StoreError(
+      `Run ${runId} has no report.json, so its findings cannot be compared. ` +
+        'Re-render it with `drifter report --run ' +
+        `${runId}\`, or check that 'json' is in output.formats.`,
+    );
+  }
+  return report;
+}
+
+function asSeverity(value: string): Severity {
+  if (value === 'error' || value === 'warning' || value === 'info') return value;
+  throw new ConfigError(`--fail-on must be error, warning or info (got "${value}")`);
+}
+
+function printDiff(
+  diff: RunDiff,
+  gating: readonly Finding[],
+  floor: Severity,
+  markdownPath: string,
+): void {
+  process.stdout.write(`\n${'='.repeat(64)}\n`);
+  process.stdout.write(`Comparing ${diff.baseline.runId} -> ${diff.current.runId}\n\n`);
+
+  for (const warning of diff.warnings) process.stdout.write(`WARNING: ${warning}\n\n`);
+
+  const added = countBySeverity(diff.added);
+  process.stdout.write(
+    `  new       ${String(diff.added.length).padStart(4)}` +
+      `   (${added.error} error, ${added.warning} warning, ${added.info} info)\n` +
+      `  fixed     ${String(diff.fixed.length).padStart(4)}\n` +
+      `  changed   ${String(diff.changed.length).padStart(4)}\n` +
+      `  unchanged ${String(diff.unchanged).padStart(4)}\n\n`,
+  );
+
+  const escalated = diff.changed.filter((entry) => entry.escalated);
+  if (escalated.length > 0) {
+    // Not gated on, but a warning that became an error is a regression in all
+    // but name, so it must not be buried.
+    process.stdout.write(
+      `${escalated.length} finding(s) got more serious without being new:\n` +
+        `${escalated
+          .slice(0, 5)
+          .map(
+            (entry) =>
+              `  ${entry.previous.severity} -> ${entry.current.severity}  ${entry.current.path}  ${entry.current.label}\n`,
+          )
+          .join('')}\n`,
+    );
+  }
+
+  if (diff.added.length === 0) {
+    process.stdout.write('No new findings since the baseline.\n\n');
+  } else {
+    process.stdout.write(
+      `${gating.length} new finding(s) at or above ${floor}:\n` +
+        `${gating
+          .slice(0, 10)
+          .map((finding) => `  ${finding.severity}  ${finding.path}  ${finding.label}\n`)
+          .join('')}\n`,
+    );
+  }
+
+  process.stdout.write(`Full detail: ${markdownPath}\n\n`);
+}
 
 /* ---------------------------------------------------------------- doctor -- */
 

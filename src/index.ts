@@ -51,7 +51,7 @@ export {
 export type { CrawlResult, CompareResult, FullRunResult, StageContext } from './pipeline.js';
 
 // Store
-export { ArtifactStore, generateRunId, pathSlug } from './store/artifact-store.js';
+export { ArtifactStore, generateRunId, listRuns, pathSlug } from './store/artifact-store.js';
 
 // Comparison, for callers building their own reporting
 export { compareRun } from './compare/engine.js';
@@ -67,3 +67,6 @@ export { writeReport, exitCodeFor, summarise, REPORT_SCHEMA_VERSION } from './re
 export type { WriteReportOptions, WriteReportResult } from './report/write.js';
 export { aggregate } from './report/aggregate.js';
 export type { ReportModel, PageReport, DeviceReport, MatrixRow } from './report/aggregate.js';
+export { diffRuns, atOrAbove, countBySeverity } from './report/diff.js';
+export type { RunDiff, RunSummary, ChangedFinding, ReportFile } from './report/diff.js';
+export { renderDiffMarkdown } from './report/diff-markdown.js';

@@ -291,16 +291,29 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit] ?? 'B'}`;
 }
 
-/** Most recent run directory by name, which sorts chronologically by design. */
-async function findLatestRun(baseDir: string): Promise<string | null> {
+/**
+ * Every stored run, oldest first.
+ *
+ * Run ids are timestamps, so lexicographic order is chronological order and no
+ * metadata has to be read to sort them. A directory without `run.json` is not a
+ * run - it is a partial write or something else entirely - and `latest` is a
+ * symlink to a run rather than a run itself.
+ */
+export async function listRuns(baseDir: string): Promise<string[]> {
   let entries: string[];
   try {
     entries = await readdir(baseDir);
   } catch {
-    return null;
+    return [];
   }
-  const runs = entries.filter((e) => e !== 'latest' && existsSync(join(baseDir, e, 'run.json')));
-  return runs.sort().at(-1) ?? null;
+  return entries
+    .filter((entry) => entry !== 'latest' && existsSync(join(baseDir, entry, 'run.json')))
+    .sort();
+}
+
+/** Most recent run directory by name, which sorts chronologically by design. */
+async function findLatestRun(baseDir: string): Promise<string | null> {
+  return (await listRuns(baseDir)).at(-1) ?? null;
 }
 
 /**

@@ -124,6 +124,23 @@ unaffected — only `drifter compare --run <id>` stops working without a re-craw
 The run logs its final size either way. See
 [The artifact store](artifact-store.md).
 
+## Gating on regressions, not just on totals
+
+`drifter run` answers "is the migration within budget?". A migration still far
+from done cannot pass that gate for months, which makes it useless as a signal in
+the meantime. `drifter diff` answers the other question - "did this change make
+it worse?" - and is useful from the first day:
+
+```yaml
+- script: npx drifter diff --out ./drift-report
+  displayName: 'Fail on regressions since the previous run'
+```
+
+It exits 1 when the current run has findings the previous one did not. Both
+`diff.json` and `diff.md` land in the run directory, so publishing that directory
+already captures them. See [Comparing two runs](comparing-runs.md), including
+when the comparison is not meaningful.
+
 ## Before you trust the gate
 
 Run `drifter doctor` once against your source site and commit the suppression
