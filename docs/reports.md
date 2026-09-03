@@ -179,6 +179,14 @@ is lost.
 Findings that carry geometry also state where the element sits, in CSS pixels
 from the top-left of the page.
 
+## The evidence gallery is paginated
+
+The gallery opens its cards — seeing the screenshots without clicking is the
+point — which defeats `loading="lazy"`. One page holding every finding therefore
+decodes every image at once, so it is split into pages of 20 findings:
+`evidence.html`, `evidence-2.html`, and so on, with links at both ends. Page one
+keeps the name the navigation points at.
+
 ## Sorting
 
 Findings arrive in the order the tool considers most useful: most serious first,

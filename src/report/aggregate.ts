@@ -86,6 +86,13 @@ export interface ReportModel {
   coverage: Finding[];
   /** Everything that is not css/links/coverage: content, images, prices, meta. */
   content: Finding[];
+  /**
+   * Findings on source pages nothing links to.
+   *
+   * Excluded from `stats` entirely, so they are reported without diluting any
+   * percentage or failing a build.
+   */
+  orphans: Finding[];
   countsByCategory: Array<{ category: FindingCategory; count: number }>;
 }
 
@@ -163,6 +170,7 @@ export function aggregate(input: AggregateInput): ReportModel {
     links,
     coverage,
     content: findings.filter((f) => !specialised.has(f)),
+    orphans: findings.filter((f) => f.details?.['orphanPage'] === true),
     countsByCategory: Object.entries(stats.findings.byCategory)
       .map(([category, count]) => ({ category: category as FindingCategory, count: count ?? 0 }))
       .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category)),

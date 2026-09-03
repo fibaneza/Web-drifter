@@ -1,3 +1,4 @@
+import type { Finding } from '../../core/types.js';
 import { pathSlug } from '../../store/artifact-store.js';
 import type { DeviceReport, PageReport, ReportModel } from '../aggregate.js';
 import {
@@ -590,13 +591,72 @@ export function renderLinksReport(context: RenderContext): string {
   });
 }
 
+/**
+ * Source pages nothing else links to.
+ *
+ * Kept out of every percentage above them and out of the gate, so the section
+ * has to say so - a number whose denominator is unstated is exactly the kind of
+ * statistic this report exists not to produce.
+ */
+function renderOrphanSection(context: RenderContext): string {
+  const paths = context.model.stats.coverage.orphanPages;
+  if (paths.length === 0) return '';
+
+  const byPath = new Map<string, Finding[]>();
+  for (const finding of context.model.orphans) {
+    const bucket = byPath.get(finding.path);
+    if (bucket) bucket.push(finding);
+    else byPath.set(finding.path, [finding]);
+  }
+
+  const rows = paths
+    .map((path) => {
+      const findings = byPath.get(path) ?? [];
+      const errors = findings.filter((f) => f.severity === 'error').length;
+      return `<tr>
+    <td><code>${escapeHtml(path)}</code></td>
+    <td class="num">${findings.length}</td>
+    <td class="num">${errors}</td>
+  </tr>`;
+    })
+    .join('');
+
+  return `<section>
+  <h2>Unreachable source pages <span class="muted">(${paths.length})</span></h2>
+  <p class="muted">
+    No other crawled source page links to these. They are usually published but
+    forgotten \u2014 old campaign landing pages, print catalogues, URLs only ever sent by
+    email \u2014 and the sitemap is the only thing that still remembers them.
+  </p>
+  <p class="muted">
+    <strong>They are excluded from every figure above and cannot fail a build.</strong>
+    Counting them would measure the size of the legacy backlog rather than the quality of
+    the migration. Set <code>crawl.treatUnlinkedAsOrphans: false</code> to hold them to the
+    same standard as the rest of the site.
+  </p>
+  <div class="scroll"><table>
+    <thead><tr><th>Page</th><th class="num">Findings</th><th class="num">Errors</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  ${
+    context.model.orphans.length === 0
+      ? ''
+      : renderFindingList(context.model.orphans, {
+          root: '',
+          evidence: context.evidence,
+          targetPathOf: context.targetPathOf,
+        })
+  }
+</section>`;
+}
+
 export function renderCoverageReport(context: RenderContext): string {
   const { coverage } = context.model.stats;
 
   const body = `<section>
   <h2>Page coverage</h2>
   <div class="grid">
-    ${percentTile(coverage.pageCoverage, 'Page coverage', 'source pages reachable')}
+    ${percentTile(coverage.pageCoverage, 'Page coverage', 'linked source pages reachable')}
     ${statTile(String(coverage.missingOnTarget), 'Missing on target')}
     ${statTile(String(coverage.extraOnTarget), 'Extra on target')}
     ${statTile(String(coverage.statusMismatches), 'Status mismatches')}
@@ -607,7 +667,8 @@ export function renderCoverageReport(context: RenderContext): string {
   <h2>Findings</h2>
   ${filterControls()}
   ${renderFindingList(context.model.coverage, { root: '', evidence: context.evidence, targetPathOf: context.targetPathOf })}
-</section>`;
+</section>
+${renderOrphanSection(context)}`;
 
   return renderLayout({
     title: 'Coverage report',

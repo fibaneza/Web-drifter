@@ -412,8 +412,17 @@ export interface CoverageStats {
   aliasPages: number;
   /** Pages that answered, but not with the status the source gave. */
   statusMismatches: number;
-  /** Source pages reachable on target, as a share of all source pages. */
+  /** Source pages reachable on target, as a share of all LINKED source pages. */
   pageCoverage: PercentStat;
+  /**
+   * Source pages no other crawled source page links to.
+   *
+   * Typically sitemap-only campaign and legacy pages. They are still crawled and
+   * compared, but excluded from `pageCoverage` and from the run's finding counts
+   * so a backlog of unreachable legacy URLs cannot masquerade as migration
+   * quality - and cannot fail a build. Reported separately instead.
+   */
+  orphanPages: string[];
 }
 
 export interface ContentStats {

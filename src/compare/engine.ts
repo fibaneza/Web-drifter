@@ -22,6 +22,7 @@ import { compareContent } from './content.js';
 import { buildPageIndex, compareCoverage, type PagePair } from './coverage.js';
 import { applySuppression, createFinding, severityFor, sortFindings } from './findings.js';
 import { buildGeometryIndex } from './geometry-index.js';
+import { findOrphanPages } from './reachability.js';
 import { compareLinks } from './links.js';
 import { compareStyles } from './styles.js';
 
@@ -66,7 +67,26 @@ export async function compareRun(options: CompareRunOptions): Promise<CompareRun
     'comparing snapshots',
   );
 
-  const coverage = compareCoverage({ sourceIndex, targetIndex, mapping, severities });
+  // A source page nothing else links to is usually a legacy or campaign URL
+  // that only the sitemap still remembers. It is compared like any other page,
+  // but kept out of the headline figures and the gate.
+  const reachability = config.crawl.treatUnlinkedAsOrphans
+    ? await findOrphanPages(store, config.crawl.startUrls)
+    : { orphans: new Set<string>(), linkedPaths: 0 };
+  if (reachability.orphans.size > 0) {
+    logger.info(
+      { orphans: reachability.orphans.size },
+      'source pages nothing links to; excluded from coverage and the gate',
+    );
+  }
+
+  const coverage = compareCoverage({
+    sourceIndex,
+    targetIndex,
+    mapping,
+    severities,
+    orphans: reachability.orphans,
+  });
   const findings: Finding[] = [...coverage.findings];
 
   const content = emptyContentStats();
@@ -100,18 +120,27 @@ export async function compareRun(options: CompareRunOptions): Promise<CompareRun
     ignoreFindingIds: config.ignore.findingIds,
     downgradeCategories: config.ignore.categories,
   });
-  const sorted = sortFindings(suppressed);
+  const sorted = sortFindings(suppressed).map((finding) =>
+    reachability.orphans.has(finding.path)
+      ? { ...finding, details: { ...finding.details, orphanPage: true } }
+      : finding,
+  );
+
+  // Statistics and the exit-code gate see only the reachable site. The findings
+  // themselves are kept whole, so report.json still describes everything found.
+  const reachableFindings = sorted.filter((finding) => !reachability.orphans.has(finding.path));
 
   // Page roll-ups are built from the FINAL findings, after suppression, so the
   // per-page counts in the report always match what the report actually shows.
   const byPath = new Map<string, Finding[]>();
-  for (const finding of sorted) {
+  for (const finding of reachableFindings) {
     const bucket = byPath.get(finding.path);
     if (bucket) bucket.push(finding);
     else byPath.set(finding.path, [finding]);
   }
 
   for (const pair of coverage.pairs) {
+    if (reachability.orphans.has(pair.path)) continue;
     pageStats.push(buildPageStats(pair, byPath.get(pair.path) ?? []));
   }
 
@@ -124,7 +153,7 @@ export async function compareRun(options: CompareRunOptions): Promise<CompareRun
     images,
     prices,
     css,
-    findings: sorted,
+    findings: reachableFindings,
     pageStats,
     links: links.stats,
   });

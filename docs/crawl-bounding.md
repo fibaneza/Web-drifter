@@ -188,6 +188,45 @@ climbs is telling you the source site is slower than `stabilization.readyTimeout
 allows — raise that before raising `retries`, since the retry pays the full
 timeout again.
 
+## Pages nothing links to
+
+A long-lived CMS accumulates pages that are still published but no longer
+reachable: old campaign landing pages, print catalogues, URLs only ever sent by
+email. The sitemap still lists them, so the crawler still finds them.
+
+Counting those against the migration measures **the size of the legacy backlog,
+not the quality of the rewrite** — and lets a 2019 landing page fail today's
+build. So a source page that no other crawled source page links to is treated as
+an orphan:
+
+- still crawled, still compared, still reported;
+- **excluded** from `pageCoverage`, from the run's finding counts, and therefore
+  from `thresholds.failOn`;
+- listed in its own section of the coverage report, which states that exclusion.
+
+```
+Page coverage   100%   (2 / 2 linked source pages)
+
+Unreachable source pages (1)
+  /campaigns/spring-2019    missing on target
+  — excluded from every figure above and cannot fail a build
+```
+
+A page named in `crawl.startUrls` is never an orphan: it was chosen
+deliberately, so `/` does not become one just because the home link is a logo
+image. A hidden link still counts as making a page reachable — this is a
+question about the site's shape, not about what a visitor can click.
+
+Set `crawl.treatUnlinkedAsOrphans: false` to hold every published page to the
+same standard.
+
+> Reachability is derived from the stored snapshots, not from the crawler. The
+> frontier does record where a URL was discovered, but it rejects a re-offer at
+> equal-or-worse depth before updating that, and every sitemap URL is seeded at
+> depth 0 — so a sitemap page that _is_ linked would still look orphaned.
+> Deriving it from link records avoids that, works on runs captured earlier, and
+> is recomputed by `drifter compare` without a re-crawl.
+
 ## Further reading
 
 - [The artifact store](artifact-store.md) — what a bounded crawl costs on disk

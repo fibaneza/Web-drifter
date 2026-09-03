@@ -78,6 +78,8 @@ export interface CoverageOptions {
   targetIndex: PageIndex;
   mapping: PathMapping;
   severities?: Partial<Record<FindingCategory, Severity>>;
+  /** Source paths nothing links to; excluded from the coverage ratio. */
+  orphans?: ReadonlySet<string>;
 }
 
 const isOk = (status: number): boolean => status >= 200 && status < 300;
@@ -87,6 +89,7 @@ export function compareCoverage({
   targetIndex,
   mapping,
   severities = {},
+  orphans = new Set<string>(),
 }: CoverageOptions): CoverageResult {
   const findings: Finding[] = [];
   const pairs: PagePair[] = [];
@@ -214,7 +217,13 @@ export function compareCoverage({
     );
   }
 
-  const comparableSourcePages = [...sourceIndex.values()].filter((p) => isOk(p.status)).length;
+  // Orphans leave both sides of the ratio: counting a page nothing links to
+  // against coverage measures the size of the legacy backlog, not the quality of
+  // the migration, and every percentage here names its own denominator.
+  const comparableSourcePages = [...sourceIndex.values()].filter(
+    (page) => isOk(page.status) && !orphans.has(page.path),
+  ).length;
+  const matchedLinkedPages = pairs.filter((pair) => !orphans.has(pair.path)).length;
 
   const stats: CoverageStats = {
     sourcePages: sourceIndex.size,
@@ -224,7 +233,8 @@ export function compareCoverage({
     extraOnTarget,
     aliasPages,
     statusMismatches,
-    pageCoverage: percentStat(pairs.length, comparableSourcePages),
+    pageCoverage: percentStat(matchedLinkedPages, comparableSourcePages),
+    orphanPages: [...orphans].sort(),
   };
 
   return { pairs, findings, stats };

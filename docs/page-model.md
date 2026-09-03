@@ -158,3 +158,28 @@ built on a weak pairing rather than having to guess why two nodes were compared.
 
 The matched pairs are then handed to the CSS comparator, which never matches
 elements itself. See [CSS comparison](css-comparison.md).
+
+## What a finding says about the pairing
+
+Because the basis of comparison is not obvious from looking at a report, every
+finding states it:
+
+```
+Element     heading · "Hand tools catalogue"
+Matched by  94% text similarity · region main · heading family
+Where       source  div.sc-body > h2
+            target  main.content > h2
+            Shown to help you find the element. The two sites share no markup,
+            so these are never compared.
+```
+
+**Element** is the node's kind and a snippet of its text, not the internal
+`nodeKey#ordinal` handle — that stays beside the finding id, where an opaque
+identifier belongs.
+
+**Matched by** is the actual pairing basis: trigram similarity, the region both
+nodes sit in, and the element family they share.
+
+**Where** shows both sides' element paths purely so you can find the element in
+each codebase. They are never an input to the comparison, and a report that
+showed only one of them invited exactly the opposite conclusion.

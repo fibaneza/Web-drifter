@@ -87,6 +87,19 @@ export const crawlSchema = z
     excludePatterns: z.array(regexLike).default([]),
     /** When non-empty, only paths matching one of these are enqueued. */
     includePatterns: z.array(regexLike).default([]),
+    /**
+     * Treat a source page nothing else links to as an orphan.
+     *
+     * A long-lived CMS accumulates published-but-unreachable pages - old campaign
+     * landing pages, print catalogues, URLs only ever sent by email - which the
+     * sitemap still lists. Counting them against page coverage measures the size
+     * of that backlog rather than the quality of the migration, and lets a 2019
+     * landing page fail today's build. They are still crawled, compared and
+     * reported; they are simply reported separately.
+     *
+     * Turn off to hold every published page to the same standard.
+     */
+    treatUnlinkedAsOrphans: z.boolean().default(true),
     /** Crawler-trap guards. */
     traps: z
       .object({
