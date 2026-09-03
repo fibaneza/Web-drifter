@@ -16,7 +16,17 @@ import type { ReportModel } from './aggregate.js';
  *
  * Errors and warnings become failures; info findings are recorded as passing
  * cases carrying their detail, so they are visible without failing the build.
+ *
+ * Findings on unreachable source pages become **skipped** cases. They are
+ * excluded from the run's statistics and from the exit code by design (see
+ * `docs/crawl-bounding.md`), so rendering them as failures would make the Tests
+ * tab contradict the exit code - a build that passes while its test view is red
+ * is worse than either signal alone. `skipped` is JUnit's own word for a case
+ * that exists but was not counted.
  */
+
+/** True for a finding on a source page nothing links to. */
+const isOrphan = (finding: Finding): boolean => finding.details?.['orphanPage'] === true;
 
 const XML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -52,11 +62,16 @@ export function renderJUnit(model: ReportModel): string {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([category, findings]) => renderSuite(category, findings));
 
+  // `failures` comes from the statistics, which exclude orphan pages, so the
+  // Tests tab and the exit code always agree. `tests` counts the cases actually
+  // emitted, which includes the skipped ones - otherwise the totals would not
+  // add up against the suites below.
   const totals = model.stats.findings;
   const failures = totals.bySeverity.error + totals.bySeverity.warning;
+  const skipped = model.findings.filter(isOrphan).length;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="web-drifter" tests="${totals.total}" failures="${failures}" time="${(
+<testsuites name="web-drifter" tests="${model.findings.length}" failures="${failures}" skipped="${skipped}" time="${(
     model.stats.durationMs / 1000
   ).toFixed(3)}">
 ${suites.join('\n')}
@@ -65,7 +80,8 @@ ${suites.join('\n')}
 }
 
 function renderSuite(category: FindingCategory, findings: readonly Finding[]): string {
-  const failures = findings.filter((f) => f.severity !== 'info').length;
+  const failures = findings.filter((f) => f.severity !== 'info' && !isOrphan(f)).length;
+  const skipped = findings.filter(isOrphan).length;
 
   const cases = findings
     .map((finding) => {
@@ -89,6 +105,13 @@ function renderSuite(category: FindingCategory, findings: readonly Finding[]): s
         .filter((line) => line !== '')
         .join('\n');
 
+      if (isOrphan(finding)) {
+        return `    <testcase classname="${escapeXml(category)}" name="${escapeXml(name)}">
+      <skipped message="On a source page nothing links to; excluded from the run's figures and from the gate."/>
+      <system-out>${escapeXml(body)}</system-out>
+    </testcase>`;
+      }
+
       if (finding.severity === 'info') {
         return `    <testcase classname="${escapeXml(category)}" name="${escapeXml(name)}">
       <system-out>${escapeXml(body)}</system-out>
@@ -103,7 +126,7 @@ function renderSuite(category: FindingCategory, findings: readonly Finding[]): s
     })
     .join('\n');
 
-  return `  <testsuite name="${escapeXml(category)}" tests="${findings.length}" failures="${failures}">
+  return `  <testsuite name="${escapeXml(category)}" tests="${findings.length}" failures="${failures}" skipped="${skipped}">
 ${cases}
   </testsuite>`;
 }

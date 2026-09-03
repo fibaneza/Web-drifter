@@ -147,11 +147,24 @@ consumer, and the ordering above should be read with that in mind: fewer
 viewports is the biggest single lever, because it reduces snapshots _and_
 screenshots together.
 
-> **Known gap.** There is no `output.keepScreenshots` yet. The full-page captures
-> are needed only to cut the evidence crops and to re-render evidence later, so a
-> run that has finished reporting could discard them and keep the crops the report
-> actually displays. Until that exists, prune `screenshots/` yourself in a
-> pipeline once the report is published, or accept the size.
+`output.keepScreenshots: false` discards them once the report is written:
+
+```ts
+output: {
+  keepSnapshots: true,     // re-diff without re-crawling
+  keepScreenshots: false,  // drop the full-page captures; keep the crops
+}
+```
+
+| Value            | What survives                                           |
+| ---------------- | ------------------------------------------------------- |
+| `true` (default) | Everything; `drifter report` can cut new evidence crops |
+| `false`          | The report and its crops, without the originals         |
+
+Pruning runs **after** reporting, never before — the crops are cut from these
+files, so the other order would silently produce a report with no pictures. What
+you give up is re-cutting evidence later: change `evidenceMinSeverity` and you
+will need a fresh crawl.
 
 ## Schema versioning
 

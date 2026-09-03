@@ -181,6 +181,17 @@ export class ArtifactStore {
     await rm(join(this.dir, 'snapshots'), { recursive: true, force: true });
   }
 
+  /**
+   * Delete the full-page captures.
+   *
+   * What `output.keepScreenshots: false` does, and it must run only after the
+   * report has been written: the evidence crops are cut from these, so pruning
+   * first would silently produce a report with no pictures.
+   */
+  async pruneScreenshots(): Promise<void> {
+    await rm(join(this.dir, 'screenshots'), { recursive: true, force: true });
+  }
+
   /** Total bytes on disk for this run, so a growing store is visible not silent. */
   async diskUsage(): Promise<number> {
     return directorySize(this.dir);

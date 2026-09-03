@@ -170,6 +170,24 @@ describe('ArtifactStore', () => {
     assert.deepEqual(await store.listPaths('source'), []);
   });
 
+  it('prunes the full-page captures without touching the evidence crops', async () => {
+    // Gzipping snapshots moved the bottleneck: on a two-viewport fixture run the
+    // snapshots come to 72 KB and the screenshots to 1.5 MB. The crops the
+    // report displays live under `assets/` and must survive.
+    await store.writeScreenshot('source', '/products', 'desktop', Buffer.from('png-bytes'));
+    await store.writeText(join('assets', 'shots', 'keep.txt'), 'crop');
+
+    assert.ok(existsSync(join(store.dir, 'screenshots')));
+
+    await store.pruneScreenshots();
+
+    assert.ok(!existsSync(join(store.dir, 'screenshots')), 'screenshots should be gone');
+    assert.ok(
+      existsSync(join(store.dir, 'assets', 'shots', 'keep.txt')),
+      'evidence crops must survive; they are what the report shows',
+    );
+  });
+
   it('reports disk usage recursively', async () => {
     const usage = await store.diskUsage();
     assert.ok(usage > 0);

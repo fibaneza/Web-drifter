@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { XMLParser } from 'fast-xml-parser';
 import { parseConfig, type DrifterConfig } from '../../src/config/index.js';
 import { silentLogger } from '../../src/core/logger.js';
 import {
@@ -174,6 +175,21 @@ describe('unreachable source pages', () => {
     assert.match(html, /Unreachable source pages/);
     assert.match(html, /campaigns\/spring-2019/);
     assert.match(html, /cannot fail a build/);
+  });
+
+  it('does not fail the build through the Tests tab either', async () => {
+    // The exit code and the JUnit file are two views of the same verdict, and a
+    // build that passes while its test view is red is worse than either signal
+    // alone. Orphan findings are `skipped` - JUnit's own word for a case that
+    // exists but was not counted.
+    const xml = await readFile(join(reportDir, 'junit.xml'), 'utf8');
+    const parsed = new XMLParser({ ignoreAttributes: false }).parse(xml) as {
+      testsuites: { '@_failures': string; '@_skipped': string };
+    };
+
+    assert.equal(parsed.testsuites['@_failures'], '0', 'JUnit contradicts the exit code');
+    assert.ok(Number(parsed.testsuites['@_skipped']) > 0, 'the orphan finding vanished');
+    assert.match(xml, /<skipped message="On a source page nothing links to/);
   });
 
   it('holds every page to the same standard when the option is off', async () => {

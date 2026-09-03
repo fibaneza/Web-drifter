@@ -189,6 +189,15 @@ export async function runAll(options: {
     );
   }
 
+  // After the report, never before: the evidence crops are cut from these.
+  if (!options.config.output.keepScreenshots) {
+    await crawl.store.pruneScreenshots();
+    options.logger.info(
+      'full-page screenshots pruned (output.keepScreenshots is false); ' +
+        'evidence crops are kept, but `drifter report` can no longer cut new ones',
+    );
+  }
+
   const diskUsage = await crawl.store.diskUsage();
   options.logger.info({ bytes: diskUsage, human: formatBytes(diskUsage) }, 'run complete');
 

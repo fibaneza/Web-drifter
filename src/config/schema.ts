@@ -318,6 +318,18 @@ export const outputSchema = z
     /** Keep raw page snapshots so `drifter compare` can re-diff without re-crawling. */
     keepSnapshots: z.boolean().default(true),
     /**
+     * Keep the full-page captures after the report is written.
+     *
+     * These are the largest thing a run produces - on a two-viewport fixture run
+     * the snapshots come to 72 KB and the screenshots to 1.5 MB - and once the
+     * evidence crops are cut, the report does not read them again. They are only
+     * needed to re-render evidence later, so a pipeline that publishes a report
+     * and moves on is paying the bulk of its artifact size for nothing.
+     *
+     * Pruning happens after reporting, so the crops the report displays survive.
+     */
+    keepScreenshots: z.boolean().default(true),
+    /**
      * Lowest severity that earns a screenshot crop.
      *
      * Cropping is the slowest part of writing a report and most findings are
