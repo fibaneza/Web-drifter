@@ -155,6 +155,12 @@ Evidence lands in `assets/shots/<page>/<viewport>/<finding-id>-{source,target,di
 A one-sided crop is normal and meaningful: source-only shows what should be
 there, target-only shows what appeared.
 
+A page that is **missing entirely** has no element to crop, so it gets a
+downscaled capture of the whole page from the side that does have it — the
+source for `page.missing-on-target`, the target for `page.extra-on-target`. No
+pixel overlay: two different pages of different heights produce a diff that is
+enormous and says nothing.
+
 > The pixel overlay illustrates a finding that content comparison already
 > proved. Nothing is ever reported _because_ pixels differ.
 
@@ -172,3 +178,20 @@ is lost.
 
 Findings that carry geometry also state where the element sits, in CSS pixels
 from the top-left of the page.
+
+## Sorting
+
+Findings arrive in the order the tool considers most useful: most serious first,
+then by what is worth fixing first — prices and text, then missing or extra
+components, then links, with styling last.
+
+The **Sort** control offers two alternatives:
+
+| Sort                   | Use it when                                               |
+| ---------------------- | --------------------------------------------------------- |
+| Most serious (default) | Working the report top-down                               |
+| Size of drift          | "Show me the blatant ones" — ranks by `details.magnitude` |
+| Page                   | Fixing one page at a time                                 |
+
+Sorting reorders findings **within** their section, so subject groups keep their
+headings and nothing is hoisted out of the group it belongs to.

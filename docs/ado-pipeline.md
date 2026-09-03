@@ -51,6 +51,17 @@ flag still wins over both:
 A blank value is treated as unset, so an empty pipeline parameter does not blank
 out a configured URL and fail validation with a confusing message.
 
+There are CLI flags for the two base URLs as well:
+
+```bash
+npx drifter run --source-url https://legacy.example.com --target-url https://new.example.com
+```
+
+Precedence, lowest to highest: **schema defaults → config file → `DRIFTER_*`
+environment → CLI flags.** Pointing both sides at the same base URL fails with a
+clear message rather than crawling a site against itself and reporting perfect
+parity.
+
 ## Why the run step uses `continueOnError`
 
 `drifter run` exits non-zero when drift exceeds the budget. If that failed the

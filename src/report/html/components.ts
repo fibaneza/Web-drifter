@@ -16,6 +16,11 @@ export interface Evidence {
   source?: string;
   target?: string;
   diff?: string;
+  /**
+   * True when these are whole-page captures rather than element crops, which
+   * are far taller and need to be constrained rather than shown at full height.
+   */
+  wholePage?: boolean;
 }
 
 export type EvidenceIndex = ReadonlyMap<string, Evidence>;
@@ -61,9 +66,15 @@ export function renderFinding(finding: Finding, options: FindingRenderOptions): 
   if (options.showPath !== false) meta.push(renderPathPair(finding, options));
   if (finding.region) meta.push(escapeHtml(finding.region));
 
+  // Magnitude is only set on graded CSS findings; everything else sorts as 1 so
+  // an ungraded error still outranks a marginal styling drift.
+  const magnitude = finding.details?.['magnitude'];
+
   return `<details class="finding" data-filterable data-severity="${escapeAttr(
     finding.severity,
-  )}" data-evidence="${hasEvidence ? '1' : '0'}" data-search="${escapeAttr(searchable)}"${
+  )}" data-evidence="${hasEvidence ? '1' : '0'}" data-magnitude="${
+    typeof magnitude === 'number' ? magnitude : 1
+  }" data-path="${escapeAttr(finding.path)}" data-search="${escapeAttr(searchable)}"${
     options.open ? ' open' : ''
   }>
   <summary>
@@ -216,12 +227,12 @@ function renderEvidence(finding: Finding, options: FindingRenderOptions): string
     );
   };
 
-  add('Source', evidence.source);
-  add('Target', evidence.target);
+  add(evidence.wholePage ? 'Source page' : 'Source', evidence.source);
+  add(evidence.wholePage ? 'Target page' : 'Target', evidence.target);
   add('Pixel overlay', evidence.diff);
 
   if (figures.length === 0) return '';
-  return `<div class="shots">${figures.join('')}</div>`;
+  return `<div class="shots${evidence.wholePage ? ' wholepage' : ''}">${figures.join('')}</div>`;
 }
 
 export function renderFindingList(

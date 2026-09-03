@@ -303,6 +303,33 @@ describe('report (end to end)', () => {
     );
   });
 
+  it('shows the whole page as evidence when a page is missing entirely', async () => {
+    // A missing page has no element to crop, but the stored capture of the side
+    // that does have it answers exactly the question being asked.
+    const missing = findings.find((f) => f.category === 'page.missing-on-target');
+    assert.ok(missing, 'the fixture pair should report a missing page');
+
+    const shots = await collectFiles(join(reportDir, 'assets', 'shots'), '.png');
+    const mine = shots.filter((file) => file.includes(missing.id));
+
+    assert.equal(mine.length, 1, `expected one whole-page shot, got ${mine.length}`);
+    // The side is load-bearing: page.missing-on-target holds the SOURCE path, so
+    // running it through the source-to-target mapping would find the wrong page.
+    assert.ok(
+      mine[0]?.endsWith('-source.png'),
+      `a page missing from the target must show the source capture, got ${mine[0]}`,
+    );
+  });
+
+  it('offers a way to reorder findings, not only filter them', async () => {
+    const html = await read('index.html');
+
+    assert.ok(/id="sort-by"/.test(html), 'no sort control');
+    // Sorting happens in the browser, so the keys have to be on the cards.
+    assert.ok(/data-magnitude="/.test(html), 'no magnitude to sort by');
+    assert.ok(/data-path="/.test(html), 'no page to sort by');
+  });
+
   it('crops screenshot evidence for findings that carry geometry', async () => {
     assert.ok(result.evidenceCount > 0, 'no screenshot evidence was generated');
 

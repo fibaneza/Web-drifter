@@ -169,6 +169,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .shots figure { margin: 0; }
 .shots figcaption { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .shots img { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+/* A whole page is many screens tall; show the top and let it scroll. */
+.shots.wholepage figure { max-height: 460px; overflow-y: auto; border-radius: 6px; }
+.shots.wholepage img { border-radius: 0; }
 .badge.shot { background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
 .arrow { color: var(--muted); }
 code.remapped { color: var(--ink); border-bottom: 1px dotted var(--muted); }
@@ -215,6 +218,58 @@ const FILTER_SCRIPT = `
   if (severity) severity.addEventListener('change', apply);
   if (shots) shots.addEventListener('change', apply);
   apply();
+
+  var sort = document.getElementById('sort-by');
+  if (!sort) return;
+
+  var RANK = { error: 0, warning: 1, info: 2 };
+  var original = null;
+
+  function comparator(mode) {
+    if (mode === 'magnitude') {
+      return function (a, b) {
+        return parseFloat(b.getAttribute('data-magnitude') || '1') -
+               parseFloat(a.getAttribute('data-magnitude') || '1');
+      };
+    }
+    return function (a, b) {
+      var pa = a.getAttribute('data-path') || '';
+      var pb = b.getAttribute('data-path') || '';
+      if (pa !== pb) return pa < pb ? -1 : 1;
+      return (RANK[a.getAttribute('data-severity')] || 0) -
+             (RANK[b.getAttribute('data-severity')] || 0);
+    };
+  }
+
+  function reorder() {
+    var mode = sort.value;
+    // Grouped per parent, never globally. Some findings sit directly in a
+    // section and others inside a subject group with its own heading, so a
+    // single flat sort would hoist findings out of their group and orphan the
+    // heading. Appending only the cards also leaves headings and the filter
+    // controls where they are, since those are never moved.
+    var groups = new Map();
+    document.querySelectorAll('details.finding[data-filterable]').forEach(function (card) {
+      var parent = card.parentElement;
+      if (!parent) return;
+      if (!groups.has(parent)) groups.set(parent, []);
+      groups.get(parent).push(card);
+    });
+
+    // The generated order is already "most serious, then most worth fixing", so
+    // it is captured once and restored rather than recomputed.
+    if (!original) {
+      original = new Map();
+      groups.forEach(function (cards, parent) { original.set(parent, cards.slice()); });
+    }
+
+    groups.forEach(function (cards, parent) {
+      var ordered = mode === '' ? (original.get(parent) || cards) : cards.slice().sort(comparator(mode));
+      ordered.forEach(function (card) { parent.appendChild(card); });
+    });
+  }
+
+  sort.addEventListener('change', reorder);
 })();
 `;
 
@@ -278,6 +333,11 @@ export function filterControls(): string {
     <option value="info">Info</option>
   </select>
   <label class="check"><input id="filter-evidence" type="checkbox"> With screenshot</label>
+  <select id="sort-by" aria-label="Sort">
+    <option value="">Sort: most serious</option>
+    <option value="magnitude">Sort: size of drift</option>
+    <option value="path">Sort: page</option>
+  </select>
   <span id="filter-count" class="muted"></span>
 </div>`;
 }

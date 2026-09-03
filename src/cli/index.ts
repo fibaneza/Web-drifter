@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError } from 'commander';
 import { loadConfig } from '../config/load.js';
 import type { DrifterConfig } from '../config/schema.js';
-import { DrifterError, toMessage } from '../core/errors.js';
+import { ConfigError, DrifterError, toMessage } from '../core/errors.js';
 import { createLogger, type LogLevel, type Logger } from '../core/logger.js';
 import type { Side } from '../core/types.js';
 import { compareRun } from '../compare/engine.js';
@@ -37,6 +37,8 @@ interface GlobalOptions {
   out?: string;
   maxPages?: number;
   viewports?: string[];
+  sourceUrl?: string;
+  targetUrl?: string;
 }
 
 async function resolveConfig(options: GlobalOptions): Promise<DrifterConfig> {
@@ -48,6 +50,18 @@ async function resolveConfig(options: GlobalOptions): Promise<DrifterConfig> {
 
   // CLI flags win over the file, so a one-off run can be narrowed without
   // editing (and accidentally committing) a change to the project config.
+  if (options.sourceUrl !== undefined) config.source.baseUrl = options.sourceUrl;
+  if (options.targetUrl !== undefined) config.target.baseUrl = options.targetUrl;
+  // The schema rejects two sides sharing a base URL, but it validated before
+  // these flags were applied - so without this a flag pointing one side at the
+  // other would quietly crawl a site against itself and report perfect parity.
+  if (config.source.baseUrl === config.target.baseUrl) {
+    throw new ConfigError(
+      `source and target resolve to the same base URL (${config.source.baseUrl}). ` +
+        'Point --source-url and --target-url at the two different deployments.',
+    );
+  }
+
   if (options.out !== undefined) config.output.dir = options.out;
   if (options.maxPages !== undefined) config.crawl.maxPages = options.maxPages;
   if (options.viewports !== undefined && options.viewports.length > 0) {
@@ -71,6 +85,20 @@ function positiveInt(value: string): number {
   return parsed;
 }
 
+/** Reject a malformed URL at parse time, where the message can name the flag. */
+function httpUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new InvalidArgumentError(`expected an absolute URL, got "${value}"`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new InvalidArgumentError(`expected an http(s) URL, got "${parsed.protocol}"`);
+  }
+  return value;
+}
+
 function commaList(value: string): string[] {
   return value
     .split(',')
@@ -88,6 +116,8 @@ program
   )
   .option('-c, --config <path>', 'path to a drifter config file')
   .option('-o, --out <dir>', 'output directory (overrides output.dir)')
+  .option('--source-url <url>', 'legacy site base URL (overrides source.baseUrl)', httpUrl)
+  .option('--target-url <url>', 'modern site base URL (overrides target.baseUrl)', httpUrl)
   .option('--max-pages <n>', 'cap pages crawled per side', positiveInt)
   .option('--viewports <list>', 'comma-separated viewport ids', commaList)
   .option('--log-level <level>', 'trace|debug|info|warn|error|silent', 'info');

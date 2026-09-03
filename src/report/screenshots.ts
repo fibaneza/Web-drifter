@@ -4,7 +4,13 @@ import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import sharp from 'sharp';
 import type { Logger } from '../core/logger.js';
-import { SEVERITY_ORDER, type BoxGeometry, type Finding, type Severity } from '../core/types.js';
+import {
+  SEVERITY_ORDER,
+  type BoxGeometry,
+  type Finding,
+  type Severity,
+  type Side,
+} from '../core/types.js';
 import type { PathMapping } from '../map/path-map.js';
 import { pathSlug } from '../store/artifact-store.js';
 import type { ArtifactStore } from '../store/artifact-store.js';
@@ -93,7 +99,35 @@ export async function generateEvidence(options: EvidenceOptions): Promise<Map<st
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
     .slice(0, maxCrops);
 
-  if (croppable.length === 0) return evidence;
+  // A page that is missing (or extra) has no element to crop, but the stored
+  // full-page capture of the side that DOES have it is exactly the evidence a
+  // reviewer wants: "here is the page that vanished".
+  const wholePage = options.findings.filter(
+    (finding) =>
+      SEVERITY_ORDER[finding.severity] <= floor &&
+      WHOLE_PAGE_SIDE[finding.category] !== undefined &&
+      boxOf(finding, 'sourceBox') === null &&
+      boxOf(finding, 'targetBox') === null,
+  );
+
+  for (const finding of wholePage) {
+    try {
+      const produced = await wholePageEvidence(finding, options);
+      if (produced) evidence.set(finding.id, produced);
+    } catch (error) {
+      options.logger.debug(
+        { finding: finding.id, error: String(error) },
+        'could not generate whole-page evidence',
+      );
+    }
+  }
+
+  if (croppable.length === 0) {
+    if (evidence.size > 0) {
+      options.logger.info({ crops: evidence.size }, 'screenshot evidence generated');
+    }
+    return evidence;
+  }
 
   // One page/viewport pair is loaded and decoded once, however many findings
   // reference it - decoding a full-page PNG per finding would dominate runtime.
@@ -142,6 +176,53 @@ export async function generateEvidence(options: EvidenceOptions): Promise<Map<st
 
   options.logger.info({ crops: evidence.size }, 'screenshot evidence generated');
   return evidence;
+}
+
+/**
+ * Coverage findings that warrant a whole-page shot, and which side holds it.
+ *
+ * The side is load-bearing and asymmetric: `page.missing-on-target` records the
+ * SOURCE path in `finding.path` (the page that should have been migrated),
+ * whereas `page.extra-on-target` records the TARGET path. Running an
+ * already-target path through the source-to-target mapping - which the crop path
+ * does for every finding - would look up the wrong page entirely.
+ */
+const WHOLE_PAGE_SIDE: Partial<Record<string, Side>> = {
+  'page.missing-on-target': 'source',
+  'page.extra-on-target': 'target',
+};
+
+/** Widest a whole-page shot is stored at; a full page is far too large as-is. */
+const WHOLE_PAGE_WIDTH = 480;
+
+/**
+ * A downscaled copy of the whole page, for a finding with no element to crop.
+ *
+ * No pixel overlay: the two sides are different pages of different heights, so a
+ * diff of them would be enormous and meaningless.
+ */
+async function wholePageEvidence(
+  finding: Finding,
+  options: EvidenceOptions,
+): Promise<Evidence | null> {
+  const side = WHOLE_PAGE_SIDE[finding.category];
+  if (!side) return null;
+
+  const viewport = finding.viewport ?? options.primaryViewport;
+  const image = await loadImage(options.store.screenshotPath(side, finding.path, viewport));
+  if (!image) return null;
+
+  const relativeDir = join('assets', 'shots', pathSlug(finding.path), viewport);
+  await mkdir(join(options.outDir, relativeDir), { recursive: true });
+
+  const name = `${finding.id}-${side}.png`;
+  const resized = await sharp(image.buffer)
+    .resize({ width: WHOLE_PAGE_WIDTH, withoutEnlargement: true })
+    .png()
+    .toBuffer();
+  await writeFile(join(options.outDir, relativeDir, name), resized);
+
+  return { [side]: join(relativeDir, name), wholePage: true };
 }
 
 /**

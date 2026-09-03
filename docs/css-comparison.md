@@ -201,3 +201,22 @@ honest:
 ```ts
 severities: { 'css.property-drift': 'error' },   // gates on styling once the migration is close
 ```
+
+## Node identity is region-qualified
+
+A node's `ordinal` counts within `region|key`, so a "Home" link in the nav and
+one in the footer are **both ordinal 0 and share a key**. Style lookup therefore
+keys on `region|key#ordinal`.
+
+This is not pedantry. Keying without the region made both nodes resolve to
+whichever was indexed last, which meant:
+
+- CSS drift was attributed to the wrong element — reporting drift that did not
+  exist, and missing drift that did; and
+- the screenshot crop showed the wrong part of the page, which is worse than
+  showing nothing, because a reviewer trusts what the picture shows.
+
+`NodeStyle.region` is optional, and the snapshot schema version did not change:
+an added optional field is a compatible read, so a stored run is not rejected. A
+snapshot captured before it existed falls back to the old ambiguous key, and
+yields no element evidence rather than wrong evidence. Re-crawl to get both.
