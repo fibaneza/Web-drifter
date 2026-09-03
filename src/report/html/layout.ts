@@ -184,6 +184,16 @@ code.remapped { color: var(--ink); border-bottom: 1px dotted var(--muted); }
   border: 1px solid var(--line); background: var(--panel); color: var(--ink);
 }
 .controls input { flex: 1; min-width: 200px; }
+.kv dd .note { font-size: 12px; margin-top: 4px; }
+.explainer { font-size: 14px; line-height: 1.6; }
+.explainer p { margin: 0 0 8px; }
+.explainer p:last-child { margin-bottom: 0; }
+.pager {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 10px 0; margin-bottom: 14px; font-size: 14px;
+}
+.pager .pages { display: flex; flex-wrap: wrap; gap: 8px; }
+.pager a { text-decoration: none; }
 .empty { padding: 26px; text-align: center; color: var(--muted); }
 footer { padding: 20px 24px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
 `;

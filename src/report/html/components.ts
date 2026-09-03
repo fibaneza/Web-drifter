@@ -133,8 +133,12 @@ function renderDetails(finding: Finding, options: FindingRenderOptions): string 
       : `<code>${escapeHtml(finding.path)}</code> \u2192 <code>${escapeHtml(targetPath)}</code>`,
   ]);
 
-  if (finding.subject) rows.push(['Element', `<code>${escapeHtml(finding.subject)}</code>`]);
+  const element = describeElement(finding);
+  if (element) rows.push(['Element', element]);
   if (finding.facet) rows.push(['Property', `<code>${escapeHtml(finding.facet)}</code>`]);
+
+  const basis = matchingBasis(finding);
+  if (basis) rows.push(['Matched by', basis]);
 
   const where = renderLocation(finding);
   if (where) rows.push(['On the page', where]);
@@ -151,16 +155,8 @@ function renderDetails(finding: Finding, options: FindingRenderOptions): string 
     ]);
   }
 
-  const hint = finding.details?.['selectorHint'];
-  if (typeof hint === 'string' && hint !== '') {
-    rows.push(['Where', `<code>${escapeHtml(hint)}</code>`]);
-  }
-
-  // Only surface a confidence that is not certain: showing "100%" on every row
-  // is noise, whereas a low value is a real caveat about the finding.
-  if (finding.confidence < 1) {
-    rows.push(['Confidence', `${Math.round(finding.confidence * 100)}% element match`]);
-  }
+  const selectors = renderSelectors(finding);
+  if (selectors) rows.push(['Where', selectors]);
 
   if (finding.sourceUrl) rows.push(['Source URL', link(deepLink(finding, 'source'))]);
   if (finding.targetUrl) rows.push(['Target URL', link(deepLink(finding, 'target'))]);
@@ -176,6 +172,73 @@ function renderDetails(finding: Finding, options: FindingRenderOptions): string 
 
 function link(url: string): string {
   return `<a href="${escapeAttr(url)}" rel="noreferrer noopener">${escapeHtml(url)}</a>`;
+}
+
+/**
+ * The element in words rather than as a hash.
+ *
+ * `subject` is `nodeKey#ordinal`, where the key is a hash of the node's text -
+ * unambiguous to the tool and meaningless to a reader. The kind and a snippet of
+ * the text say the same thing in a form someone can act on. The raw subject is
+ * still available beside the finding id, where an opaque handle belongs.
+ */
+function describeElement(finding: Finding): string | null {
+  const text = typeof finding.expected === 'string' ? finding.expected : finding.actual;
+  const snippet = typeof text === 'string' ? text.trim().replace(/\s+/g, ' ') : '';
+
+  const kind = finding.nodeKind ? `<code>${escapeHtml(finding.nodeKind)}</code>` : null;
+  const quoted =
+    snippet === ''
+      ? null
+      : `&ldquo;${escapeHtml(snippet.length > 80 ? `${snippet.slice(0, 79)}\u2026` : snippet)}&rdquo;`;
+
+  if (kind && quoted) return `${kind} \u00b7 ${quoted}`;
+  if (kind ?? quoted) return kind ?? quoted;
+  return finding.subject ? `<code>${escapeHtml(finding.subject)}</code>` : null;
+}
+
+/**
+ * Why these two elements were treated as the same element.
+ *
+ * This is the row that answers the question the report kept provoking. Nothing
+ * here is new data - confidence, region and kind are already on every finding -
+ * but stating the basis explicitly is what stops a reader assuming the selectors
+ * below were what got compared.
+ */
+function matchingBasis(finding: Finding): string | null {
+  if (finding.region === undefined && finding.nodeKind === undefined) return null;
+
+  const parts: string[] = [`${Math.round(finding.confidence * 100)}% text similarity`];
+  if (finding.region) parts.push(`region <code>${escapeHtml(finding.region)}</code>`);
+  if (finding.nodeKind) parts.push(`<code>${escapeHtml(finding.nodeKind)}</code> family`);
+
+  const low = finding.details?.['lowConfidence'] === true;
+  const caveat = low ? ' <span class="badge warning">weak pairing</span>' : '';
+
+  return `${parts.join(' \u00b7 ')}${caveat}`;
+}
+
+/**
+ * Both sides' element paths, labelled as location rather than comparison.
+ *
+ * Showing only the source's read as though selectors were the basis of the diff.
+ * They cannot be: a Sitecore table and a React component share no markup, so any
+ * selector-keyed comparison would report total drift on a perfect migration.
+ */
+function renderSelectors(finding: Finding): string | null {
+  const source = finding.details?.['selectorHint'];
+  const target = finding.details?.['targetSelectorHint'];
+
+  const rows: string[] = [];
+  if (typeof source === 'string' && source !== '') {
+    rows.push(`<div><span class="muted">source</span> <code>${escapeHtml(source)}</code></div>`);
+  }
+  if (typeof target === 'string' && target !== '') {
+    rows.push(`<div><span class="muted">target</span> <code>${escapeHtml(target)}</code></div>`);
+  }
+  if (rows.length === 0) return null;
+
+  return `${rows.join('')}<div class="muted note">Shown to help you find the element. The two sites share no markup, so these are never compared.</div>`;
 }
 
 /** Where on the rendered page this finding is, in CSS pixels. */
@@ -221,7 +284,7 @@ function renderEvidence(finding: Finding, options: FindingRenderOptions): string
   const add = (caption: string, path: string | undefined): void => {
     if (!path) return;
     figures.push(
-      `<figure><figcaption>${escapeHtml(caption)}</figcaption><img loading="lazy" src="${escapeAttr(
+      `<figure><figcaption>${escapeHtml(caption)}</figcaption><img loading="lazy" decoding="async" src="${escapeAttr(
         options.root + path,
       )}" alt="${escapeAttr(caption)}"></figure>`,
     );

@@ -231,6 +231,10 @@ function classifyPair(
     actual: changed.actual,
     details: {
       selectorHint: pair.source.selectorHint,
+      // Both sides, because showing only one reads as though selectors were what
+      // got compared. They are not - the two sites share no markup by
+      // construction - and these are here purely to help locate the element.
+      targetSelectorHint: pair.target.selectorHint,
       // Surfaced so a reviewer can discount a finding built on a weak pairing
       // rather than having to guess why two unrelated nodes were compared.
       lowConfidence: pair.confidence < options.minMatchConfidence,

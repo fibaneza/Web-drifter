@@ -321,6 +321,27 @@ describe('report (end to end)', () => {
     );
   });
 
+  it('says what was compared, so a selector is not mistaken for the basis', async () => {
+    // The report showed one CSS selector under "Where", which reads as though
+    // selectors were being diffed. They cannot be - the two sites share no
+    // markup - so the card now shows both sides and says so.
+    const drift = findings.find((f) => f.category === 'content.drift');
+    assert.ok(drift, 'the fixture pair should produce content drift');
+
+    assert.ok(
+      typeof drift.details?.['targetSelectorHint'] === 'string',
+      'the target-side element path is not stored, so only one side can be shown',
+    );
+
+    const html = await read(join('pages', `${pathSlug(drift.path)}.html`));
+    assert.match(html, /Matched by/, 'no pairing basis on the card');
+    assert.match(html, /never compared/, 'the card does not say selectors are not compared');
+  });
+
+  it('explains the comparison on the first page a reader opens', async () => {
+    assert.match(await read('index.html'), /How the comparison works/);
+  });
+
   it('offers a way to reorder findings, not only filter them', async () => {
     const html = await read('index.html');
 

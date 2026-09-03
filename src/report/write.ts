@@ -21,6 +21,8 @@ import {
   renderCssReport,
   renderDeviceDetail,
   renderLinksReport,
+  evidenceHref,
+  evidencePageCount,
   renderEvidenceReport,
   renderOverview,
   renderPageDetail,
@@ -143,12 +145,20 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
 
     files.push(
       ['index.html', renderOverview(context)],
-      ['evidence.html', renderEvidenceReport(context)],
       ['css-report.html', renderCssReport(context)],
       ['links-report.html', renderLinksReport(context)],
       ['coverage-report.html', renderCoverageReport(context)],
       [join('pages', 'index.html'), renderPageIndex(context)],
     );
+
+    // The gallery is paginated: it opens its cards, so one page holding every
+    // finding decodes hundreds of images at once and locks the browser up.
+    const evidencePages = evidencePageCount(
+      model.findings.filter((finding) => evidence.has(finding.id)).length,
+    );
+    for (let page = 1; page <= evidencePages; page += 1) {
+      files.push([evidenceHref(page), renderEvidenceReport(context, page)]);
+    }
 
     for (const page of model.pages) {
       files.push([join('pages', `${pathSlug(page.path)}.html`), renderPageDetail(page, context)]);

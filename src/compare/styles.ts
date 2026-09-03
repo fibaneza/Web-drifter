@@ -279,6 +279,7 @@ export function compareStyles(
               group: groupOf(property),
               kind: comparison.kind,
               selectorHint: match.source.selectorHint,
+              targetSelectorHint: match.target.selectorHint,
               // Carried so the report can crop this element out of the stored
               // full-page screenshot as evidence, without re-navigating.
               sourceBox: sourceStyle.box,
@@ -329,6 +330,7 @@ export function compareStyles(
               tolerancePx: Math.round(tolerance * 100) / 100,
               deltas: layout.deltas,
               selectorHint: match.source.selectorHint,
+              targetSelectorHint: match.target.selectorHint,
               sourceBox: sourceStyle.box,
               targetBox: targetStyle.box,
               ...(layoutMagnitude === null

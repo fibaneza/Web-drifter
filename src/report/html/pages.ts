@@ -35,6 +35,16 @@ export interface RenderContext {
   targetPathOf: (sourcePath: string) => string;
 }
 
+/**
+ * Findings per gallery page.
+ *
+ * Each card shows up to three images and the gallery opens its cards, which
+ * defeats lazy loading by design - so the whole page's images decode at once.
+ * Twenty cards is about sixty images: enough to browse, few enough that a real
+ * migration's several hundred findings no longer lock the browser up.
+ */
+const EVIDENCE_PAGE_SIZE = 20;
+
 export const pageHref = (path: string): string => `pages/${pathSlug(path)}.html`;
 export const deviceHref = (viewport: string): string => `devices/${viewport}/index.html`;
 
@@ -144,6 +154,30 @@ export function renderOverview(context: RenderContext): string {
   const worst = model.findings.slice(0, 15);
   const evidenceCount = model.findings.filter((f) => context.evidence.has(f.id)).length;
 
+  // The premise is counter-intuitive enough that a reader who does not know it
+  // will misread every card, so it is stated on the first page they open.
+  const howItWorks = `<section class="panel explainer">
+  <h2>How the comparison works</h2>
+  <p>
+    The two sites share <strong>no markup</strong>. A legacy CMS emits tables and generated
+    class names; a modern rewrite emits semantic HTML and its own conventions. Comparing
+    selectors or DOM structure would therefore report total drift on a <em>perfect</em>
+    migration, so this tool never does.
+  </p>
+  <p>
+    Instead each page is reduced to an ordered stream of semantic nodes \u2014 headings,
+    paragraphs, links, images, prices \u2014 and a source node is paired with a target node by
+    <strong>text similarity within the same region and element family</strong>. Every finding
+    shows the basis of its own pairing under <em>Matched by</em>.
+  </p>
+  <p>
+    Element paths appear on a finding only so you can locate the element on each side. They
+    are never compared. Styling is compared as <strong>computed values</strong> on nodes that
+    content matching already paired, which is the only common ground two unrelated
+    implementations have.
+  </p>
+</section>`;
+
   const top = `<section>
   <h2>Worst findings</h2>
   <p class="muted">
@@ -175,7 +209,16 @@ export function renderOverview(context: RenderContext): string {
     subtitle: `${stats.sourceBaseUrl} → ${stats.targetBaseUrl} · ${stats.viewports.join(', ')}`,
     root: '',
     nav: standardNav('', 'Overview'),
-    body: headline + parity + top + coverage + matrix + devices + topProperties + categories,
+    body:
+      headline +
+      parity +
+      top +
+      howItWorks +
+      coverage +
+      matrix +
+      devices +
+      topProperties +
+      categories,
   });
 }
 
@@ -287,13 +330,22 @@ export function renderPageDetail(page: PageReport, context: RenderContext): stri
  * hundreds of rows stays scannable, which also means the evidence is invisible
  * until something is clicked - so the gallery opens its cards.
  */
-export function renderEvidenceReport(context: RenderContext): string {
+export function renderEvidenceReport(context: RenderContext, page = 1): string {
   const { model, evidence } = context;
 
   const withEvidence = model.findings.filter((finding) => evidence.has(finding.id));
+  const pages = Math.max(1, Math.ceil(withEvidence.length / EVIDENCE_PAGE_SIZE));
+  const current = Math.min(Math.max(page, 1), pages);
+  const slice = withEvidence.slice(
+    (current - 1) * EVIDENCE_PAGE_SIZE,
+    current * EVIDENCE_PAGE_SIZE,
+  );
 
+  // Grouped within the page rather than across the whole run: a page break in
+  // the middle of one path's findings is far less confusing than a heading that
+  // claims a count the page does not contain.
   const byPath = new Map<string, typeof withEvidence>();
-  for (const finding of withEvidence) {
+  for (const finding of slice) {
     const bucket = byPath.get(finding.path);
     if (bucket) bucket.push(finding);
     else byPath.set(finding.path, [finding]);
@@ -333,16 +385,52 @@ export function renderEvidenceReport(context: RenderContext): string {
     a finding that was already proven by comparing content, never the reason for one.
   </p>
 </section>
+${evidencePager(current, pages, withEvidence.length)}
 ${filterControls()}
-${sections}`;
+${sections}
+${evidencePager(current, pages, withEvidence.length)}`;
 
   return renderLayout({
-    title: 'Evidence',
+    title: pages > 1 ? `Evidence (page ${current} of ${pages})` : 'Evidence',
     subtitle: `${withEvidence.length} findings with screenshots`,
     root: '',
     nav: standardNav('', 'Evidence'),
     body,
   });
+}
+
+/** How many pages the gallery needs for a given run. */
+export function evidencePageCount(findingsWithEvidence: number): number {
+  return Math.max(1, Math.ceil(findingsWithEvidence / EVIDENCE_PAGE_SIZE));
+}
+
+/** File name for one gallery page. Page 1 keeps the name the nav links to. */
+export function evidenceHref(page: number): string {
+  return page <= 1 ? 'evidence.html' : `evidence-${page}.html`;
+}
+
+function evidencePager(current: number, pages: number, total: number): string {
+  if (pages <= 1) return '';
+
+  const link = (page: number, label: string, disabled: boolean): string =>
+    disabled
+      ? `<span class="muted">${escapeHtml(label)}</span>`
+      : `<a href="${escapeAttr(evidenceHref(page))}">${escapeHtml(label)}</a>`;
+
+  const numbered = Array.from({ length: pages }, (_, index) => index + 1)
+    .map((page) =>
+      page === current
+        ? `<strong>${page}</strong>`
+        : `<a href="${escapeAttr(evidenceHref(page))}">${page}</a>`,
+    )
+    .join(' ');
+
+  return `<nav class="pager" aria-label="Evidence pages">
+  ${link(current - 1, '\u2190 Previous', current === 1)}
+  <span class="pages">${numbered}</span>
+  ${link(current + 1, 'Next \u2192', current === pages)}
+  <span class="muted">page ${current} of ${pages} \u00b7 ${total} findings</span>
+</nav>`;
 }
 
 /* -------------------------------------------------------------------------- */
