@@ -128,6 +128,19 @@ export interface BoxGeometry {
 export interface NodeStyle {
   nodeKey: string;
   ordinal: number;
+  /**
+   * Region the node was found in.
+   *
+   * Load-bearing for identity, not decoration: `ordinal` counts within
+   * `region|nodeKey`, so a "Home" link in the nav and one in the footer are both
+   * ordinal 0 and share a key. Without the region they resolve to the same
+   * style, which misattributes CSS drift and crops the wrong element as
+   * evidence.
+   *
+   * Optional because snapshots captured before this existed do not carry it;
+   * those fall back to the ambiguous key rather than being rejected.
+   */
+  region?: Region | undefined;
   /** Allowlisted computed properties, already normalised for comparison. */
   props: Record<string, string>;
   box: BoxGeometry;
@@ -179,6 +192,11 @@ export interface ImageRecord {
   visible: boolean;
   /** True for CSS background images rather than <img>/<picture>. */
   isBackground: boolean;
+  /**
+   * Where the image is rendered, for screenshot evidence. Absent on snapshots
+   * captured before images carried geometry.
+   */
+  box?: BoxGeometry | undefined;
 }
 
 export type PriceSource = 'jsonld' | 'microdata' | 'selector' | 'text';

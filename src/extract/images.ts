@@ -104,5 +104,6 @@ export function buildImageRecords(images: readonly RawImage[], pageUrl: string):
     region: image.region as Region,
     visible: image.visible,
     isBackground: image.isBackground,
+    box: image.box,
   }));
 }

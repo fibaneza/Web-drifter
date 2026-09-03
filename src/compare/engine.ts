@@ -21,7 +21,7 @@ import { compareImages, comparePrices } from './assets.js';
 import { compareContent } from './content.js';
 import { buildPageIndex, compareCoverage, type PagePair } from './coverage.js';
 import { applySuppression, createFinding, severityFor, sortFindings } from './findings.js';
-import { buildGeometryIndex, buildRecordGeometryIndex } from './geometry-index.js';
+import { buildGeometryIndex } from './geometry-index.js';
 import { compareLinks } from './links.js';
 import { compareStyles } from './styles.js';
 
@@ -189,12 +189,9 @@ async function comparePage(
     textSimilarity: config.thresholds.textSimilarity,
     severities,
   };
-  const images = compareImages(source, target, {
-    ...assetOptions,
-    sourceGeometry: buildRecordGeometryIndex(source, primary, 'image', 'assetKey'),
-    targetGeometry: buildRecordGeometryIndex(target, primary, 'image', 'assetKey'),
-  });
-  // Prices carry their own box from extraction, so they need no index.
+  // Images and prices carry their own box from extraction, so neither needs an
+  // index built for it.
+  const images = compareImages(source, target, assetOptions);
   const prices = comparePrices(source, target, assetOptions);
   findings.push(...images.findings, ...prices.findings);
 

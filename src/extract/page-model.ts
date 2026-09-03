@@ -134,6 +134,7 @@ export function assembleModel(raw: RawPageModel, options: CaptureModelOptions): 
     styles.push({
       nodeKey: key,
       ordinal,
+      region,
       props: node.styles,
       box: node.box,
       visible: node.visible,

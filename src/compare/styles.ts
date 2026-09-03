@@ -72,12 +72,43 @@ export interface StyleCompareResult {
   stats: CssStats;
 }
 
-const styleKey = (node: ContentNode): string => `${node.key}#${node.ordinal}`;
+/**
+ * Identity of a node for style lookup, and for grouping its findings.
+ *
+ * Region-qualified because `ordinal` counts within `region|key`: a "Home" link
+ * in the nav and one in the footer are both ordinal 0 and share a key. Keying
+ * without the region resolves both to whichever was indexed last, which reports
+ * drift on the wrong element and crops the wrong element as evidence.
+ */
+const styleKey = (node: ContentNode): string => `${node.region}|${node.key}#${node.ordinal}`;
 
-function indexStyles(capture: ViewportCapture): Map<string, NodeStyle> {
-  const index = new Map<string, NodeStyle>();
-  for (const style of capture.styles) index.set(`${style.nodeKey}#${style.ordinal}`, style);
-  return index;
+/** Identity as it was before styles carried a region: ambiguous across regions. */
+const legacyStyleKey = (node: Pick<ContentNode, 'key' | 'ordinal'>): string =>
+  `${node.key}#${node.ordinal}`;
+
+/**
+ * Look up the computed style for a node.
+ *
+ * Returns a function rather than a map so the ambiguous fallback can be confined
+ * to snapshots that predate the region being recorded. A snapshot that has
+ * regions must never fall back: a miss there means the node genuinely has no
+ * style at this viewport, and answering with some other region's style would
+ * reintroduce exactly the bug the region was added to fix.
+ */
+function indexStyles(capture: ViewportCapture): (node: ContentNode) => NodeStyle | undefined {
+  const qualified = new Map<string, NodeStyle>();
+  const legacy = new Map<string, NodeStyle>();
+
+  for (const style of capture.styles) {
+    if (style.region !== undefined) {
+      qualified.set(`${style.region}|${style.nodeKey}#${style.ordinal}`, style);
+    }
+    const bare = legacyStyleKey({ key: style.nodeKey, ordinal: style.ordinal });
+    if (!legacy.has(bare)) legacy.set(bare, style);
+  }
+
+  if (qualified.size > 0) return (node) => qualified.get(styleKey(node));
+  return (node) => legacy.get(legacyStyleKey(node));
 }
 
 /**
@@ -184,8 +215,8 @@ export function compareStyles(
       // A weak content pairing cannot support a precise style claim.
       if (match.confidence < options.minMatchConfidence) continue;
 
-      const sourceStyle = sourceStyles.get(styleKey(match.source));
-      const targetStyle = targetStyles.get(styleKey(match.target));
+      const sourceStyle = sourceStyles(match.source);
+      const targetStyle = targetStyles(match.target);
       if (!sourceStyle || !targetStyle) continue;
 
       const identity = styleKey(match.source);

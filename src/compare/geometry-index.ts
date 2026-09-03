@@ -27,69 +27,29 @@ export function geometryKey(node: Pick<ContentNode, 'region' | 'key' | 'ordinal'
 /**
  * Box per content node at one viewport.
  *
- * Pairs `content[i]` with `styles[i]` positionally rather than by key. The
- * extractor appends to both arrays in the same pass over the same elements, so
- * position is an exact correspondence where the key is only an approximate one.
- * A length mismatch means that assumption no longer holds, so the index is
- * empty rather than wrong - findings then simply carry no evidence.
+ * Keyed by region-qualified node identity, matching how the style comparator
+ * resolves a node. Works at any viewport: each viewport runs its own extraction,
+ * so there is no positional correspondence with the primary viewport's content
+ * to rely on.
  */
 export function buildGeometryIndex(snapshot: PageSnapshot, viewport: string): GeometryIndex {
   const index = new Map<string, BoxGeometry>();
 
   const capture = snapshot.viewports.find((entry) => entry.viewport === viewport);
-  if (!capture || capture.styles.length !== snapshot.content.length) return index;
+  if (!capture) return index;
 
-  for (const [position, node] of snapshot.content.entries()) {
-    const style = capture.styles[position];
-    if (!style) continue;
+  for (const style of capture.styles) {
+    // A snapshot captured before styles carried a region cannot be resolved
+    // unambiguously, and a box attributed to the wrong element is worse than no
+    // evidence at all. Re-crawl to get evidence for those runs.
+    if (style.region === undefined) continue;
     // A zero-area box cannot be cropped, and an element that is not rendered has
     // no location to point at.
     if (style.box.width <= 0 || style.box.height <= 0) continue;
-    index.set(geometryKey(node), style.box);
+    index.set(`${style.region}|${style.nodeKey}#${style.ordinal}`, style.box);
   }
 
   return index;
-}
-
-/**
- * Box per image or price, keyed the way those comparators identify them.
- *
- * Images and prices are compared as their own records rather than as content
- * nodes, so they cannot be looked up by node identity. They are still extracted
- * as content nodes, though, carrying the same discriminator in `attrs` - the
- * asset key for an image, the displayed text for a price - which is enough to
- * find the box. First occurrence wins: two prices reading "$9.99" in one region
- * are indistinguishable to the comparator too.
- */
-export function buildRecordGeometryIndex(
-  snapshot: PageSnapshot,
-  viewport: string,
-  kind: 'image' | 'price',
-  attr: 'assetKey' | 'raw',
-): GeometryIndex {
-  const index = new Map<string, BoxGeometry>();
-
-  const capture = snapshot.viewports.find((entry) => entry.viewport === viewport);
-  if (!capture || capture.styles.length !== snapshot.content.length) return index;
-
-  for (const [position, node] of snapshot.content.entries()) {
-    if (node.kind !== kind) continue;
-    const discriminator = node.attrs[attr];
-    if (discriminator === undefined || discriminator === '') continue;
-
-    const style = capture.styles[position];
-    if (!style || style.box.width <= 0 || style.box.height <= 0) continue;
-
-    const key = recordGeometryKey(node.region, discriminator);
-    if (!index.has(key)) index.set(key, style.box);
-  }
-
-  return index;
-}
-
-/** Key for {@link buildRecordGeometryIndex}, from a record's own fields. */
-export function recordGeometryKey(region: string, discriminator: string): string {
-  return `${region}|${discriminator}`;
 }
 
 /**
