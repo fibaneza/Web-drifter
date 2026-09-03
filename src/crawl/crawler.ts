@@ -75,7 +75,7 @@ export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> 
   });
 
   const robots: RobotsChecker = config.crawl.respectRobotsTxt
-    ? await fetchRobots(site.baseUrl)
+    ? await fetchRobots(site.baseUrl, '*', site.headers)
     : allowAllRobots;
 
   if (config.crawl.respectRobotsTxt && !robots.absent) {
@@ -89,7 +89,10 @@ export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> 
   }
 
   if (config.crawl.useSitemap) {
-    const sitemapUrls = await discoverSitemapUrls(site.baseUrl, logger);
+    const sitemapUrls = await discoverSitemapUrls(site.baseUrl, logger, {
+      headers: site.headers,
+      declared: robots.sitemaps,
+    });
     for (const url of sitemapUrls) frontier.seed(url);
     logger.info({ side, count: sitemapUrls.length }, 'seeded from sitemap');
   }

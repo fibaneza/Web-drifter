@@ -1,5 +1,6 @@
 import pLimit from 'p-limit';
-import { request } from 'undici';
+import { request, type Dispatcher } from 'undici';
+import { createRedirectingDispatcher } from '../core/http.js';
 
 /**
  * HTTP link checking.
@@ -46,13 +47,18 @@ export class LinkChecker {
   readonly #cache = new Map<string, Promise<LinkStatus>>();
   readonly #timeoutMs: number;
   readonly #userAgent: string;
-  readonly #maxRedirects: number;
+  readonly #dispatcher: Dispatcher;
 
   constructor(options: LinkCheckerOptions = {}) {
     this.#limit = pLimit(options.concurrency ?? 8);
     this.#timeoutMs = options.timeoutMs ?? 15_000;
     this.#userAgent = options.userAgent ?? 'web-drifter link checker';
-    this.#maxRedirects = options.maxRedirects ?? 5;
+    this.#dispatcher = createRedirectingDispatcher(options.maxRedirects ?? 5);
+  }
+
+  /** Release the connection pool. Safe to call more than once. */
+  async close(): Promise<void> {
+    await this.#dispatcher.close();
   }
 
   /** Check a URL, reusing an in-flight or completed result for the same URL. */
@@ -90,9 +96,9 @@ export class LinkChecker {
       const response = await request(url, {
         method,
         headers: { 'user-agent': this.#userAgent, accept: '*/*' },
+        dispatcher: this.#dispatcher,
         headersTimeout: this.#timeoutMs,
         bodyTimeout: this.#timeoutMs,
-        maxRedirections: this.#maxRedirects,
       });
 
       // The body must be consumed or the connection is never released back to

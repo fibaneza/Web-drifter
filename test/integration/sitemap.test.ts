@@ -22,12 +22,26 @@ import { startFixtureServer } from '../fixtures/server.js';
  * handler reads the same object it was given, so filling it in after `listen`
  * is what makes that possible.
  */
-async function seedsFrom(build: (origin: string) => Record<string, string>): Promise<string[]> {
+async function seedsFrom(
+  build: (origin: string) => Record<string, string>,
+  options: {
+    declared?: (origin: string) => readonly string[];
+    headers?: Record<string, string>;
+    requireHeader?: { name: string; value: string };
+  } = {},
+): Promise<string[]> {
   const routes: Record<string, string> = {};
-  const server = await startFixtureServer({ site: 'legacy', extraRoutes: routes });
+  const server = await startFixtureServer({
+    site: 'legacy',
+    extraRoutes: routes,
+    ...(options.requireHeader !== undefined ? { requireHeader: options.requireHeader } : {}),
+  });
   try {
     Object.assign(routes, build(server.origin));
-    const urls = await discoverSitemapUrls(server.origin, silentLogger);
+    const urls = await discoverSitemapUrls(server.origin, silentLogger, {
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+      ...(options.declared !== undefined ? { declared: options.declared(server.origin) } : {}),
+    });
     return urls.map((url) => url.pathname).sort();
   } finally {
     await server.close();
@@ -91,5 +105,57 @@ describe('sitemap discovery', () => {
     }));
 
     assert.deepEqual(paths, []);
+  });
+
+  it('reads a sitemap declared in robots.txt rather than at /sitemap.xml', async () => {
+    // WordPress publishes /sitemap_index.xml and says so in robots.txt. Trying
+    // only the conventional location finds nothing and reports no error.
+    const paths = await seedsFrom(
+      (origin) => ({ '/sitemap_index.xml': urlset([`${origin}/declared`]) }),
+      { declared: (origin) => [`${origin}/sitemap_index.xml`] },
+    );
+
+    assert.deepEqual(paths, ['/declared']);
+  });
+
+  it('still falls back to /sitemap.xml when robots.txt declares none', async () => {
+    const paths = await seedsFrom(
+      (origin) => ({ '/sitemap.xml': urlset([`${origin}/fallback`]) }),
+      {
+        declared: () => [],
+      },
+    );
+
+    assert.deepEqual(paths, ['/fallback']);
+  });
+
+  it('forwards the configured request headers', async () => {
+    // Without the header the fixture answers 401 to everything, so an empty
+    // result here means the token never left the client.
+    const paths = await seedsFrom((origin) => ({ '/sitemap.xml': urlset([`${origin}/gated`]) }), {
+      requireHeader: { name: 'x-preview-token', value: 'let-me-in' },
+      headers: { 'x-preview-token': 'let-me-in' },
+    });
+
+    assert.deepEqual(paths, ['/gated']);
+  });
+
+  it('yields nothing when the required header is missing, rather than hanging', async () => {
+    const paths = await seedsFrom((origin) => ({ '/sitemap.xml': urlset([`${origin}/gated`]) }), {
+      requireHeader: { name: 'x-preview-token', value: 'let-me-in' },
+    });
+
+    assert.deepEqual(paths, []);
+  });
+
+  it('reads a sitemap whose elements carry an explicit namespace prefix', async () => {
+    const paths = await seedsFrom((origin) => ({
+      '/sitemap.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sm:url><sm:loc>${origin}/prefixed</sm:loc></sm:url>
+</sm:urlset>`,
+    }));
+
+    assert.deepEqual(paths, ['/prefixed']);
   });
 });

@@ -56,6 +56,14 @@ Sitemap entries are seeded at depth 0 deliberately: they are entry points the
 site advertises, not pages found by wandering, and they reach content buried
 deeper than `maxDepth` would.
 
+The sitemap is located from robots.txt first — any `Sitemap:` line it declares,
+in order — and only then from the conventional `/sitemap.xml`. Trying the
+convention alone finds nothing on the many sites that publish elsewhere;
+WordPress ships `/sitemap_index.xml` and says so only in robots.txt. Both
+robots.txt and the sitemap are fetched with the side's configured
+`headers`, so a staging site behind a preview-bypass token still contributes
+seeds rather than silently contributing none.
+
 ## 3. Never revisit
 
 A URL is reduced to a **canonical key** before any visited check:

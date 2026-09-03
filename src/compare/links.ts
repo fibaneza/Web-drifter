@@ -188,12 +188,19 @@ export async function compareLinks(
   let brokenLinks = 0;
   let redirectedLinks = 0;
 
-  const results = await Promise.all(
-    [...toCheck.entries()].map(async ([url, occurrence]) => ({
-      occurrence,
-      status: await checker.check(url),
-    })),
-  );
+  let results;
+  try {
+    results = await Promise.all(
+      [...toCheck.entries()].map(async ([url, occurrence]) => ({
+        occurrence,
+        status: await checker.check(url),
+      })),
+    );
+  } finally {
+    // The checker owns a connection pool; leaving it open holds sockets for the
+    // rest of the run.
+    await checker.close();
+  }
 
   for (const { occurrence, status } of results) {
     if (status.kind === 'broken' || status.kind === 'error') {

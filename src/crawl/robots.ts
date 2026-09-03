@@ -1,4 +1,5 @@
 import { request } from 'undici';
+import { createRedirectingDispatcher } from '../core/http.js';
 
 /**
  * Minimal robots.txt support.
@@ -18,11 +19,21 @@ export interface RobotsRules {
   disallow: string[];
   allow: string[];
   crawlDelayMs: number;
+  /** `Sitemap:` locations declared in the file, in the order they appear. */
+  sitemaps: string[];
 }
 
 export interface RobotsChecker {
   isAllowed(path: string): boolean;
   readonly crawlDelayMs: number;
+  /**
+   * Sitemaps the file declares.
+   *
+   * Worth reading even when every rule is permissive: a site whose sitemap is
+   * not at `/sitemap.xml` advertises it here and nowhere else, and WordPress -
+   * which is most of the legacy web - ships `/sitemap_index.xml`.
+   */
+  readonly sitemaps: readonly string[];
   /** True when no robots.txt was found or it could not be read. */
   readonly absent: boolean;
 }
@@ -30,11 +41,12 @@ export interface RobotsChecker {
 const ALLOW_ALL: RobotsChecker = {
   isAllowed: () => true,
   crawlDelayMs: 0,
+  sitemaps: [],
   absent: true,
 };
 
 export function parseRobots(text: string, userAgent = '*'): RobotsRules {
-  const rules: RobotsRules = { disallow: [], allow: [], crawlDelayMs: 0 };
+  const rules: RobotsRules = { disallow: [], allow: [], crawlDelayMs: 0, sitemaps: [] };
   const wanted = userAgent.toLowerCase();
 
   let inScope = false;
@@ -62,6 +74,13 @@ export function parseRobots(text: string, userAgent = '*'): RobotsRules {
       continue;
     }
 
+    // `Sitemap` is a non-group directive: it applies to the whole file wherever
+    // it appears, so it is read before the group-scope check below.
+    if (field === 'sitemap') {
+      if (value !== '') rules.sitemaps.push(value);
+      continue;
+    }
+
     if (!inScope) continue;
 
     if (field === 'disallow' && value !== '') rules.disallow.push(value);
@@ -79,6 +98,7 @@ export function parseRobots(text: string, userAgent = '*'): RobotsRules {
 export function createChecker(rules: RobotsRules, absent = false): RobotsChecker {
   return {
     crawlDelayMs: rules.crawlDelayMs,
+    sitemaps: rules.sitemaps,
     absent,
     isAllowed(path: string): boolean {
       const longestAllow = longestMatch(rules.allow, path);
@@ -108,12 +128,28 @@ function matches(pattern: string, path: string): boolean {
   return new RegExp(`^${escaped}${anchored ? '$' : ''}`).test(path);
 }
 
-/** Fetch and parse robots.txt. Never throws: an unreachable file allows everything. */
-export async function fetchRobots(baseUrl: string, userAgent = '*'): Promise<RobotsChecker> {
+/**
+ * Fetch and parse robots.txt. Never throws: an unreachable file allows everything.
+ *
+ * `headers` carries the site's configured request headers. A staging site gated
+ * behind a preview-bypass token answers 401 to an unauthenticated request, and
+ * silently losing robots.txt there costs the sitemap seeds it declares.
+ */
+export async function fetchRobots(
+  baseUrl: string,
+  userAgent = '*',
+  headers: Record<string, string> = {},
+): Promise<RobotsChecker> {
+  // Following redirects matters here: plenty of sites answer /robots.txt with a
+  // 301 to the canonical host, and treating that as "no robots.txt" would also
+  // discard the sitemaps it declares.
+  const dispatcher = createRedirectingDispatcher(3);
   try {
     const url = new URL('/robots.txt', baseUrl).href;
     const response = await request(url, {
       method: 'GET',
+      headers,
+      dispatcher,
       headersTimeout: 5000,
       bodyTimeout: 5000,
     });
@@ -125,6 +161,8 @@ export async function fetchRobots(baseUrl: string, userAgent = '*'): Promise<Rob
     return createChecker(parseRobots(await response.body.text(), userAgent));
   } catch {
     return ALLOW_ALL;
+  } finally {
+    await dispatcher.close();
   }
 }
 

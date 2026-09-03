@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError } from 'commander';
 import { loadConfig } from '../config/load.js';
@@ -590,10 +591,25 @@ export async function main(argv: readonly string[] = process.argv): Promise<void
   await program.parseAsync([...argv]);
 }
 
-// Self-execute only when invoked as the binary, so tests can import this module
-// without it parsing their argv. Compared as file URLs rather than by string
-// suffix, which misfires on relative paths and symlinked bin entries.
-const entry = process.argv[1];
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+/**
+ * Was this module run as the binary, rather than imported by a test?
+ *
+ * `argv[1]` is the path as invoked, but `import.meta.url` is always the real
+ * path - Node resolves symlinks when loading a module. An installed or linked
+ * `drifter` is a symlink in the bin directory, so comparing the two directly
+ * never matched and the binary parsed nothing, printed nothing and exited 0.
+ * Resolving `argv[1]` first is what makes the installed command work at all.
+ */
+export function isDirectRun(entry: string | undefined): boolean {
+  if (entry === undefined) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+  } catch {
+    // argv[1] can name something unstattable (an eval, a deleted file).
+    return false;
+  }
+}
+
+if (isDirectRun(process.argv[1])) {
   await main();
 }

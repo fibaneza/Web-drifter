@@ -45,15 +45,33 @@ export interface FixtureServerOptions {
    * the shared fixture sites, whose content is pinned by `DRIFTS.md`.
    */
   extraRoutes?: Record<string, string>;
+  /**
+   * Reject any request that does not carry this header, with 401.
+   *
+   * Models a staging site behind a preview-bypass token - the reason
+   * `source.headers` exists - so tests can prove a fetch actually forwards the
+   * configured headers rather than merely accepting them as an argument.
+   */
+  requireHeader?: { name: string; value: string } | undefined;
 }
 
 export async function startFixtureServer(options: FixtureServerOptions): Promise<FixtureServer> {
   const root = join(FIXTURES_DIR, options.site);
   const redirects = options.redirects ?? {};
   const extraRoutes = options.extraRoutes ?? {};
+  const requireHeader = options.requireHeader;
 
   const server: Server = createServer((req, res) => {
     void (async () => {
+      if (
+        requireHeader !== undefined &&
+        req.headers[requireHeader.name.toLowerCase()] !== requireHeader.value
+      ) {
+        res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end('unauthorized');
+        return;
+      }
+
       const url = new URL(req.url ?? '/', 'http://localhost');
       let pathname = decodeURIComponent(url.pathname);
 

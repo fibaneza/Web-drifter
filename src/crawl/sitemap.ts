@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
-import { request } from 'undici';
+import { request, type Dispatcher } from 'undici';
+import { createRedirectingDispatcher } from '../core/http.js';
 import type { Logger } from '../core/logger.js';
 
 /**
@@ -14,7 +15,21 @@ import type { Logger } from '../core/logger.js';
  * entry points the site advertises, not pages we discovered by wandering.
  */
 
+export interface SitemapOptions {
+  /** The site's configured request headers, e.g. a preview-bypass token. */
+  headers?: Record<string, string> | undefined;
+  /**
+   * Sitemap locations declared in robots.txt.
+   *
+   * Tried before `/sitemap.xml`. Without them a site that publishes its sitemap
+   * anywhere else - `/sitemap_index.xml` on any WordPress install - contributes
+   * no seeds at all, and nothing says so.
+   */
+  declared?: readonly string[] | undefined;
+}
+
 const SITEMAP_TIMEOUT_MS = 10_000;
+const SITEMAP_MAX_REDIRECTS = 3;
 const MAX_SITEMAPS = 20;
 const MAX_URLS = 10_000;
 
@@ -33,46 +48,63 @@ interface SitemapDocument {
  * Never throws: a missing or malformed sitemap is normal and simply yields no
  * extra seeds.
  */
-export async function discoverSitemapUrls(baseUrl: string, logger: Logger): Promise<URL[]> {
+export async function discoverSitemapUrls(
+  baseUrl: string,
+  logger: Logger,
+  options: SitemapOptions = {},
+): Promise<URL[]> {
   const found = new Map<string, URL>();
-  const queue: string[] = [new URL('/sitemap.xml', baseUrl).href];
+  // Declared locations first: they are what the site says is authoritative,
+  // and `/sitemap.xml` is only a convention.
+  const queue: string[] = [...(options.declared ?? []), new URL('/sitemap.xml', baseUrl).href];
   const visited = new Set<string>();
+  const dispatcher = createRedirectingDispatcher(SITEMAP_MAX_REDIRECTS);
 
-  while (queue.length > 0 && visited.size < MAX_SITEMAPS && found.size < MAX_URLS) {
-    const target = queue.shift();
-    if (!target || visited.has(target)) continue;
-    visited.add(target);
+  try {
+    while (queue.length > 0 && visited.size < MAX_SITEMAPS && found.size < MAX_URLS) {
+      const target = queue.shift();
+      if (!target || visited.has(target)) continue;
+      visited.add(target);
 
-    const document = await fetchSitemap(target, logger);
-    if (!document) continue;
+      const document = await fetchSitemap(target, logger, options.headers ?? {}, dispatcher);
+      if (!document) continue;
 
-    // A sitemap index points at more sitemaps rather than pages.
-    for (const entry of toArray(document.sitemapindex?.sitemap)) {
-      if (entry.loc && queue.length + visited.size < MAX_SITEMAPS) queue.push(entry.loc.trim());
-    }
-
-    for (const entry of toArray(document.urlset?.url)) {
-      if (!entry.loc) continue;
-      try {
-        const url = new URL(entry.loc.trim());
-        found.set(url.href, url);
-      } catch {
-        // Skip malformed <loc> entries rather than failing the whole sitemap.
+      // A sitemap index points at more sitemaps rather than pages.
+      for (const entry of toArray(document.sitemapindex?.sitemap)) {
+        if (entry.loc && queue.length + visited.size < MAX_SITEMAPS) queue.push(entry.loc.trim());
       }
-      if (found.size >= MAX_URLS) break;
+
+      for (const entry of toArray(document.urlset?.url)) {
+        if (!entry.loc) continue;
+        try {
+          const url = new URL(entry.loc.trim());
+          found.set(url.href, url);
+        } catch {
+          // Skip malformed <loc> entries rather than failing the whole sitemap.
+        }
+        if (found.size >= MAX_URLS) break;
+      }
     }
+  } finally {
+    await dispatcher.close();
   }
 
   return [...found.values()];
 }
 
-async function fetchSitemap(url: string, logger: Logger): Promise<SitemapDocument | null> {
+async function fetchSitemap(
+  url: string,
+  logger: Logger,
+  headers: Record<string, string>,
+  dispatcher: Dispatcher,
+): Promise<SitemapDocument | null> {
   try {
     const response = await request(url, {
       method: 'GET',
+      headers,
+      dispatcher,
       headersTimeout: SITEMAP_TIMEOUT_MS,
       bodyTimeout: SITEMAP_TIMEOUT_MS,
-      maxRedirections: 3,
     });
 
     if (response.statusCode !== 200) {
@@ -85,6 +117,9 @@ async function fetchSitemap(url: string, logger: Logger): Promise<SitemapDocumen
       trimValues: true,
       // Never coerce <loc> to a number or boolean; URLs must stay strings.
       parseTagValue: false,
+      // Generators that use an explicit prefix emit <sm:urlset><sm:loc>. Without
+      // this the document parses fine and yields nothing, which is worse.
+      removeNSPrefix: true,
     });
     return parser.parse(await response.body.text()) as SitemapDocument;
   } catch (error) {
