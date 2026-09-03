@@ -45,6 +45,15 @@ drifter compare   # fast, pure computation — run this repeatedly
 | compare  | `src/compare/engine.ts`       | Runs the comparators in dependency order                            |
 | report   | `src/report/write.ts`         | Two navigation axes, JSON, Markdown, JUnit                          |
 
+Three modules joined later, each answering a question the original pipeline
+could not:
+
+| Module                          | Question it answers                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `src/compare/geometry-index.ts` | Where is this node on the page? — so a text or price finding can carry a screenshot             |
+| `src/compare/reachability.ts`   | Does anything link to this source page? — so a forgotten legacy URL does not dilute the figures |
+| `src/report/diff.ts`            | What changed since the last run? — the question asked on every deploy after the first           |
+
 ## Comparator ordering
 
 Order is not arbitrary — each stage consumes the previous one's output.

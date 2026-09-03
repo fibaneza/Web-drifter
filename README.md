@@ -106,11 +106,16 @@ open drifter-out/latest/index.html
 | `drifter run`                               | Full pipeline: crawl both sides → compare → report                 |
 | `drifter crawl --side source\|target\|both` | Capture snapshots only                                             |
 | `drifter compare --run <id>`                | Re-diff stored snapshots without re-crawling                       |
-| `drifter links`                             | Link and URL check only                                            |
-| `drifter doctor`                            | Crawl the source twice and diff it against itself to measure noise |
 | `drifter report --run <id>`                 | Re-render reports from stored findings                             |
+| `drifter diff --since <id>`                 | Compare two stored runs: what is new, fixed or changed             |
+| `drifter doctor`                            | Crawl the source twice and diff it against itself to measure noise |
 
-Exit codes: `0` clean or within budget · `1` findings exceed `thresholds.failOn` · `2` tool failure.
+Exit codes: `0` clean or within budget · `1` findings exceed `thresholds.failOn`
+(or, for `diff`, new findings appeared) · `2` tool failure.
+
+Base URLs come from the config file, `DRIFTER_SOURCE_BASE_URL` /
+`DRIFTER_TARGET_BASE_URL`, or `--source-url` / `--target-url`, in that order of
+precedence.
 
 ### `drifter doctor` — do this first
 
@@ -193,10 +198,11 @@ layout legitimately differs from a desktop one; that is not drift.
 | [The canonical page model](docs/page-model.md)      | Why the DOM is not compared, and the alignment algorithm        |
 | [CSS comparison](docs/css-comparison.md)            | Computed styles, the allowlist, responsive visibility           |
 | [Crawl boundaries](docs/crawl-bounding.md)          | Origin, depth, revisits, query parameters, traps                |
-| [The artifact store](docs/artifact-store.md)        | Run layout, disk cost, and the `keepSnapshots` trade-off        |
+| [The artifact store](docs/artifact-store.md)        | Run layout, what actually costs disk, and retention             |
 | [Comparing two runs](docs/comparing-runs.md)        | `drifter diff` — what is new, fixed or changed since a baseline |
 | [Report structure](docs/reports.md)                 | The two navigation axes, screenshots, statistics                |
 | [Avoiding false positives](docs/false-positives.md) | What the tool handles, and what you should tune                 |
+| [Azure DevOps pipeline](docs/ado-pipeline.md)       | Publishing reports and gating a build                           |
 
 ## Development
 

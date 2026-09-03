@@ -33,6 +33,25 @@ Break any of these and the tool becomes a noise generator nobody trusts.
 6. **A false positive costs more than a missed finding.** A report with 4,000
    bogus rows gets abandoned in week two. When in doubt, lower the severity or
    add a normalisation step rather than emitting noise.
+7. **Node identity is region-qualified.** `ContentNode.ordinal` counts within
+   `region|key`, so `key#ordinal` alone collides — a "Home" link in the nav and
+   one in the footer are both ordinal 0. Dropping the region misattributes CSS
+   drift _and_ crops the wrong element as evidence, and a picture of the wrong
+   element is worse than no picture.
+8. **The report may show element paths; it must never imply they were
+   compared.** Corollary of 1, and the place it actually went wrong: a card
+   showing one selector reads as though selectors were the basis of the diff.
+   Show both sides, say what the pairing was really based on, or show neither.
+9. **CSS never reaches `error`.** Some restyling is intentional in a rewrite,
+   and a gate that fails a build over a shifted margin is switched off on day
+   one — at which point it catches nothing at all. Severity is graded by
+   distance across `info → warning`. Elements _disappearing_ is different and
+   stays an error: that is a missing component, not styling.
+10. **Every percentage names its denominator, and unreachable pages are outside
+    it.** A source page nothing links to is usually a forgotten campaign or
+    legacy URL. Counting it measures the size of the legacy backlog rather than
+    the quality of the migration, so it is compared and reported but excluded
+    from the figures and from the gate.
 
 ## Architecture
 
@@ -52,8 +71,8 @@ the tool tunable. Do not collapse them into one in-memory pipeline.
 | `src/extract/` | In-page extractor, canonical page model, text normalisation, prices, images, CSS allowlist   |
 | `src/map/`     | URL canonicalisation, source→target path mapping                                             |
 | `src/store/`   | On-disk artifact store                                                                       |
-| `src/compare/` | Comparators producing `Finding[]`                                                            |
-| `src/report/`  | JSON / HTML / Markdown / JUnit output                                                        |
+| `src/compare/` | Comparators producing `Finding[]`, node geometry, reachability                               |
+| `src/report/`  | JSON / HTML / Markdown / JUnit output, screenshot evidence, run-over-run diff                |
 
 ### The Node/browser split
 
@@ -105,8 +124,10 @@ sandbox that already ships a browser.
 - **Commit and push to `main` after each phase or meaningful step.** This repo
   uses a single branch; do not create feature branches or pull requests.
 - Run `npm run verify` before committing.
-- Keep `docs/` current when behaviour changes — `docs/crawl-bounding.md` and
-  `docs/reports.md` are specifications, not afterthoughts.
+- Keep `docs/` current when behaviour changes. `docs/crawl-bounding.md`,
+  `docs/reports.md`, `docs/css-comparison.md` and `docs/comparing-runs.md` are
+  specifications, not afterthoughts — several of them state a contract the tests
+  assert.
 - Explain trade-offs in commit messages. The _why_ is the valuable part.
 
 ## Delivery phases
@@ -124,3 +145,7 @@ sandbox that already ships a browser.
 | 4     | Reporting: by device and by page, with screenshots and stats | done   |
 | 5     | CLI polish, `doctor`, docs                                   | done   |
 | 6     | Azure DevOps pipeline (optional, last)                       | done   |
+| 7     | Evidence for text/price findings; distance-graded CSS        | done   |
+| 8     | Region-qualified identity; CLI URL flags; report sorting     | done   |
+| 9     | `drifter diff`: run-over-run comparison                      | done   |
+| 10    | Orphan pages; paginated evidence; self-explanatory cards     | done   |

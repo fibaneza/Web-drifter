@@ -1,8 +1,8 @@
 # The artifact store
 
 Every run writes one self-contained folder. This document covers what it costs,
-how to bound it, and the one decision — `output.keepSnapshots` — that trades
-disk against the ability to re-diff without re-crawling.
+how to bound it, and the decision — `output.keepSnapshots` — that trades disk
+against the ability to re-diff without re-crawling.
 
 ## Layout
 
@@ -120,13 +120,38 @@ Ordered by how much they save per unit of lost coverage:
 2. **`crawl.maxPages` with `includePatterns`.** A migration usually has a dozen
    templates; crawling 40 pages that cover all of them beats crawling 1,000 that
    cover the same dozen.
-3. **`output.keepSnapshots: false`.** Removes ~90% of what remains, at the cost
-   of re-crawling to re-diff.
+3. **`output.keepSnapshots: false`.** Removes the snapshots, at the cost of
+   re-crawling to re-diff. Note the caveat below: since snapshots were gzipped,
+   this is no longer the largest thing in a run.
 4. **Retention.** Runs are independent folders, so pruning is a `find`:
 
    ```bash
    find ./drifter-out -maxdepth 1 -name '20*' -mtime +14 -exec rm -rf {} +
    ```
+
+## What actually dominates a run now
+
+Gzipping the snapshots was roughly a 10× win, and it moved the bottleneck.
+Measured on a two-viewport fixture run:
+
+| Directory                       | Size   |
+| ------------------------------- | ------ |
+| `snapshots/` (gzipped)          | 72 KB  |
+| `assets/` (evidence crops)      | 152 KB |
+| `screenshots/` (full-page PNGs) | 1.5 MB |
+
+**Full-page screenshots are now around twenty times the snapshot cost**, and
+`output.keepSnapshots: false` does not touch them — `pruneSnapshots()` removes
+only `snapshots/`. So on a large crawl the option no longer controls the dominant
+consumer, and the ordering above should be read with that in mind: fewer
+viewports is the biggest single lever, because it reduces snapshots _and_
+screenshots together.
+
+> **Known gap.** There is no `output.keepScreenshots` yet. The full-page captures
+> are needed only to cut the evidence crops and to re-render evidence later, so a
+> run that has finished reporting could discard them and keep the crops the report
+> actually displays. Until that exists, prune `screenshots/` yourself in a
+> pipeline once the report is published, or accept the size.
 
 ## Schema versioning
 
