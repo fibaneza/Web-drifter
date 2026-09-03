@@ -21,6 +21,7 @@ import { compareImages, comparePrices } from './assets.js';
 import { compareContent } from './content.js';
 import { buildPageIndex, compareCoverage, type PagePair } from './coverage.js';
 import { applySuppression, createFinding, severityFor, sortFindings } from './findings.js';
+import { buildGeometryIndex, buildRecordGeometryIndex } from './geometry-index.js';
 import { compareLinks } from './links.js';
 import { compareStyles } from './styles.js';
 
@@ -163,10 +164,20 @@ async function comparePage(
 
   const findings: Finding[] = [];
 
+  // Where each element sits on the page, at the primary viewport only. Content,
+  // image and price findings are viewport-independent by design, so they take
+  // their evidence from one representative render rather than claiming a drift
+  // that only exists at one size.
+  const primary = config.primaryViewport;
+  const sourceGeometry = buildGeometryIndex(source, primary);
+  const targetGeometry = buildGeometryIndex(target, primary);
+
   const content = compareContent(source, target, {
     textSimilarity: config.thresholds.textSimilarity,
     minMatchConfidence: config.thresholds.minMatchConfidence,
     severities,
+    sourceGeometry,
+    targetGeometry,
   });
   findings.push(...content.findings);
 
@@ -178,13 +189,23 @@ async function comparePage(
     textSimilarity: config.thresholds.textSimilarity,
     severities,
   };
-  const images = compareImages(source, target, assetOptions);
+  const images = compareImages(source, target, {
+    ...assetOptions,
+    sourceGeometry: buildRecordGeometryIndex(source, primary, 'image', 'assetKey'),
+    targetGeometry: buildRecordGeometryIndex(target, primary, 'image', 'assetKey'),
+  });
+  // Prices carry their own box from extraction, so they need no index.
   const prices = comparePrices(source, target, assetOptions);
   findings.push(...images.findings, ...prices.findings);
 
   const styles = compareStyles(source, target, content.matchedNodes, {
     cssProperties,
     lengthTolerancePx: config.thresholds.cssLengthPx,
+    colorTolerance: config.thresholds.cssColorTolerance,
+    colorDeltaWarn: config.thresholds.cssColorDeltaWarn,
+    lengthWarnPx: config.thresholds.cssLengthWarnPx,
+    lengthWarnPercent: config.thresholds.cssLengthWarnPercent,
+    geometryWarnFactor: config.thresholds.cssGeometryWarnFactor,
     geometryPx: config.thresholds.geometryPx,
     geometryPercent: config.thresholds.geometryPercent,
     minMatchConfidence: config.thresholds.minMatchConfidence,

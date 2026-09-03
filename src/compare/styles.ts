@@ -12,7 +12,12 @@ import type {
 import { percentStat } from '../core/types.js';
 import { groupOf } from '../extract/css-properties.js';
 import { truncate } from '../extract/text.js';
-import { compareCssValue, geometryTolerance } from './css-normalize.js';
+import {
+  compareCssValue,
+  geometryTolerance,
+  parsePx,
+  type CssComparison,
+} from './css-normalize.js';
 import { createFinding, severityFor } from './findings.js';
 
 /**
@@ -39,6 +44,13 @@ import { createFinding, severityFor } from './findings.js';
 export interface StyleCompareOptions {
   /** Properties to compare, already filtered by `ignore.cssProperties`. */
   cssProperties: readonly string[];
+  /** Perceptual colour distance below which a colour difference is not reported. */
+  colorTolerance: number;
+  /** Distances at or above which a CSS drift is a warning rather than information. */
+  colorDeltaWarn: number;
+  lengthWarnPx: number;
+  lengthWarnPercent: number;
+  geometryWarnFactor: number;
   lengthTolerancePx: number;
   /** Absolute geometry tolerance in CSS pixels. */
   geometryPx: number;
@@ -66,6 +78,56 @@ function indexStyles(capture: ViewportCapture): Map<string, NodeStyle> {
   const index = new Map<string, NodeStyle>();
   for (const style of capture.styles) index.set(`${style.nodeKey}#${style.ordinal}`, style);
   return index;
+}
+
+/**
+ * How big a CSS difference is, relative to the threshold that makes it a warning.
+ *
+ * One unitless number across colour, length and geometry so the report can rank
+ * unlike drifts against each other: `>= 1` is a warning, below that is
+ * information. Recording it on the finding is what lets a reviewer sort by "show
+ * me the blatant ones" instead of reading four thousand equal-looking rows.
+ */
+function propertyMagnitude(comparison: CssComparison, options: StyleCompareOptions): number | null {
+  if (comparison.deltaE !== undefined && options.colorDeltaWarn > 0) {
+    return comparison.deltaE / options.colorDeltaWarn;
+  }
+
+  if (comparison.deltaPx !== undefined) {
+    const absolute = Math.abs(comparison.deltaPx);
+    const byPixels = options.lengthWarnPx > 0 ? absolute / options.lengthWarnPx : 0;
+
+    // The relative term is what stops 4px reading the same on a 12px body font
+    // as on a 48px heading. Whichever measure is more alarmed wins.
+    const sourcePx = parsePx(comparison.normalizedSource);
+    const byFraction =
+      sourcePx !== null && sourcePx !== 0 && options.lengthWarnPercent > 0
+        ? Math.abs(comparison.deltaPx / sourcePx) / options.lengthWarnPercent
+        : 0;
+
+    return Math.max(byPixels, byFraction);
+  }
+
+  return null;
+}
+
+/**
+ * Severity for a graded CSS finding.
+ *
+ * CSS never reaches `error`. Some restyling is intentional in a rewrite, and a
+ * gate that fails the build over a shifted margin gets switched off on day one -
+ * at which point it catches nothing at all. An explicit severity override in
+ * config still wins outright, so the escape hatch stays honest.
+ */
+function gradedSeverity(
+  category: 'css.property-drift' | 'css.layout-drift',
+  magnitude: number | null,
+  severities: Partial<Record<FindingCategory, Severity>>,
+): Severity {
+  const override = severities[category];
+  if (override) return override;
+  if (magnitude === null) return 'warning';
+  return magnitude >= 1 ? 'warning' : 'info';
 }
 
 export function compareStyles(
@@ -152,11 +214,14 @@ export function compareStyles(
         comparedProperties += 1;
         const comparison = compareCssValue(property, sourceValue, targetValue, {
           lengthTolerancePx: options.lengthTolerancePx,
+          colorTolerance: options.colorTolerance,
         });
         if (comparison.equal) continue;
 
         propertyDrifts += 1;
         propertyCounts.set(property, (propertyCounts.get(property) ?? 0) + 1);
+
+        const magnitude = propertyMagnitude(comparison, options);
 
         findings.push(
           createFinding({
@@ -166,7 +231,7 @@ export function compareStyles(
             severity:
               comparison.kind === 'font-fallback'
                 ? 'info'
-                : severityFor('css.property-drift', severities),
+                : gradedSeverity('css.property-drift', magnitude, severities),
             path: source.path,
             sourceUrl: source.finalUrl,
             targetUrl: target.finalUrl,
@@ -188,6 +253,10 @@ export function compareStyles(
               sourceBox: sourceStyle.box,
               targetBox: targetStyle.box,
               ...(comparison.deltaPx === undefined ? {} : { deltaPx: comparison.deltaPx }),
+              ...(comparison.deltaE === undefined
+                ? {}
+                : { deltaE: Math.round(comparison.deltaE * 1000) / 1000 }),
+              ...(magnitude === null ? {} : { magnitude: Math.round(magnitude * 100) / 100 }),
             },
           }),
         );
@@ -196,10 +265,23 @@ export function compareStyles(
       const layout = compareGeometry(sourceStyle, targetStyle, tolerance);
       if (layout) {
         layoutDrifts += 1;
+        // The largest shift in any gated dimension. A box that moved 40px is a
+        // different problem from one that moved 3px, and the report should not
+        // present them as the same problem.
+        const shift = Math.max(
+          Math.abs(layout.deltas.x),
+          Math.abs(layout.deltas.width),
+          Math.abs(layout.deltas.height),
+        );
+        // Measured against the tolerance in force at this viewport, so the
+        // bands mean the same thing at 360px and at 1440px.
+        const warnAt = tolerance * options.geometryWarnFactor;
+        const layoutMagnitude = warnAt > 0 ? shift / warnAt : null;
+
         findings.push(
           createFinding({
             category: 'css.layout-drift',
-            severity: severityFor('css.layout-drift', severities),
+            severity: gradedSeverity('css.layout-drift', layoutMagnitude, severities),
             path: source.path,
             sourceUrl: source.finalUrl,
             targetUrl: target.finalUrl,
@@ -218,6 +300,9 @@ export function compareStyles(
               selectorHint: match.source.selectorHint,
               sourceBox: sourceStyle.box,
               targetBox: targetStyle.box,
+              ...(layoutMagnitude === null
+                ? {}
+                : { magnitude: Math.round(layoutMagnitude * 100) / 100 }),
             },
           }),
         );
@@ -297,7 +382,8 @@ interface LayoutDrift {
   summary: string;
   expected: Record<string, number>;
   actual: Record<string, number>;
-  deltas: Record<string, number>;
+  /** Signed target-minus-source change per dimension, in CSS pixels. */
+  deltas: { x: number; y: number; width: number; height: number };
 }
 
 /**

@@ -71,6 +71,11 @@ export interface RawPriceCandidate {
   context: string;
   /** Currency code when the source states it explicitly (JSON-LD, microdata). */
   currency?: string;
+  /**
+   * Where the price is rendered, when it came from an element at all.
+   * Absent for JSON-LD, which is metadata with nothing on screen to point at.
+   */
+  box?: RawBox;
 }
 
 export interface RawPageModel {
@@ -522,6 +527,7 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
       source: 'microdata',
       region: regionOf(element),
       context: contextTextFor(element),
+      box: boxOf(element),
       ...(currency ? { currency: currency.trim() } : {}),
     });
   }
@@ -538,6 +544,7 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
           source: 'selector',
           region: regionOf(element),
           context: contextTextFor(element),
+          box: boxOf(element),
         });
       }
     } catch {
@@ -566,6 +573,9 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
           source: 'text',
           region: regionOf(parent),
           context: contextTextFor(parent),
+          // The containing element, not the text run: a Range box would be
+          // tighter but crops need surrounding context to be recognisable.
+          box: boxOf(parent),
         });
         match = CURRENCY_TEXT.exec(value);
       }

@@ -10,7 +10,7 @@ import {
   primaryFont,
 } from '../../src/compare/css-normalize.js';
 
-const opts = { lengthTolerancePx: 1 };
+const opts = { lengthTolerancePx: 1, colorTolerance: 0 };
 const cmp = (p: string, a: string, b: string, o = opts): ReturnType<typeof compareCssValue> =>
   compareCssValue(p, a, b, o);
 
@@ -81,10 +81,31 @@ describe('compareCssValue', () => {
     assert.equal(cmp('color', '#ffffff', 'rgb(255, 255, 255)').equal, true);
   });
 
-  it('reports a real colour change', () => {
+  it('reports a real colour change, carrying how far apart the colours are', () => {
     const result = cmp('background-color', '#12355b', '#1a4a7a');
     assert.equal(result.equal, false);
-    assert.equal(result.kind, 'value');
+    assert.equal(result.kind, 'color');
+    assert.ok(
+      result.deltaE !== undefined && result.deltaE > 0,
+      'a colour difference must carry its perceptual distance, or severity cannot be graded',
+    );
+  });
+
+  it('absorbs a colour difference below the threshold of vision', () => {
+    // Rounding one channel by one is something every rewrite does and nobody
+    // can see. Reporting it identically to black becoming white is how a CSS
+    // report ends up with thousands of rows that get ignored wholesale.
+    const invisible = cmp('color', 'rgb(0, 0, 0)', 'rgb(1, 1, 1)', {
+      lengthTolerancePx: 1,
+      colorTolerance: 0.01,
+    });
+    assert.equal(invisible.equal, true);
+
+    const visible = cmp('color', 'rgb(26, 29, 33)', 'rgb(40, 44, 50)', {
+      lengthTolerancePx: 1,
+      colorTolerance: 0.01,
+    });
+    assert.equal(visible.equal, false, 'a visible difference must still be reported');
   });
 
   it('absorbs sub-pixel length differences within tolerance', () => {
@@ -114,7 +135,10 @@ describe('compareCssValue', () => {
   });
 
   it('honours a stricter tolerance', () => {
-    assert.equal(cmp('margin-top', '8px', '8.4px', { lengthTolerancePx: 0 }).equal, false);
+    assert.equal(
+      cmp('margin-top', '8px', '8.4px', { lengthTolerancePx: 0, colorTolerance: 0 }).equal,
+      false,
+    );
   });
 });
 

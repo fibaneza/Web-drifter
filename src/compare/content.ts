@@ -11,6 +11,7 @@ import { REGIONS, kindFamily, percentStat } from '../core/types.js';
 import { trigramSimilarity, truncate } from '../extract/text.js';
 import { align, type AlignedPair } from './align.js';
 import { createFinding, severityFor } from './findings.js';
+import { boxDetails, type GeometryIndex } from './geometry-index.js';
 
 /**
  * Content comparison.
@@ -30,6 +31,13 @@ export interface ContentCompareOptions {
   /** Below this, a match is reported but flagged as low confidence. */
   minMatchConfidence: number;
   severities?: Partial<Record<FindingCategory, Severity>>;
+  /**
+   * Element boxes at the primary viewport, so a text finding can carry a
+   * screenshot of the element it is about. Optional: without them the findings
+   * are unchanged apart from having no evidence.
+   */
+  sourceGeometry?: GeometryIndex | undefined;
+  targetGeometry?: GeometryIndex | undefined;
 }
 
 export interface ContentCompareResult {
@@ -162,6 +170,7 @@ function classifyPair(
   options: ContentCompareOptions,
 ): Finding | null {
   const { severities = {} } = options;
+  const geometry = { source: options.sourceGeometry, target: options.targetGeometry };
 
   if (pair.source && !pair.target) {
     return createFinding({
@@ -176,7 +185,10 @@ function classifyPair(
       label: `Missing on target: ${describe(pair.source)}`,
       expected: pair.source.text,
       actual: null,
-      details: { selectorHint: pair.source.selectorHint },
+      details: {
+        selectorHint: pair.source.selectorHint,
+        ...boxDetails(pair.source, null, geometry),
+      },
     });
   }
 
@@ -193,7 +205,10 @@ function classifyPair(
       label: `Only on target: ${describe(pair.target)}`,
       expected: null,
       actual: pair.target.text,
-      details: { selectorHint: pair.target.selectorHint },
+      details: {
+        selectorHint: pair.target.selectorHint,
+        ...boxDetails(null, pair.target, geometry),
+      },
     });
   }
 
@@ -219,6 +234,7 @@ function classifyPair(
       // Surfaced so a reviewer can discount a finding built on a weak pairing
       // rather than having to guess why two unrelated nodes were compared.
       lowConfidence: pair.confidence < options.minMatchConfidence,
+      ...boxDetails(pair.source, pair.target, geometry),
     },
   });
 }

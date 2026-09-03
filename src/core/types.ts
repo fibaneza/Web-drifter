@@ -192,6 +192,12 @@ export interface PriceRecord {
   region: Region;
   /** Nearby text used to pair prices across the two sites. */
   context: string;
+  /**
+   * Where the price is rendered, for screenshot evidence. Absent when the price
+   * came from JSON-LD, which has nothing on screen to crop, and on snapshots
+   * captured before prices carried geometry.
+   */
+  box?: BoxGeometry | undefined;
 }
 
 /* -------------------------------------------------------------------------- */

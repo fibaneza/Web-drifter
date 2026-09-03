@@ -148,6 +148,7 @@ export function buildPriceRecords(candidates: readonly RawPriceCandidate[]): Pri
       source: candidate.source,
       region: candidate.region as Region,
       context: candidate.context,
+      ...(candidate.box ? { box: candidate.box } : {}),
     });
   }
   return dedupePrices(records);

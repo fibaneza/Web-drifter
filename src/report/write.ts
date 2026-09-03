@@ -88,6 +88,8 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
     );
 
     evidence = await generateEvidence({
+      primaryViewport: config.primaryViewport,
+      minSeverity: config.output.evidenceMinSeverity,
       store: options.store,
       outDir,
       findings: options.findings,

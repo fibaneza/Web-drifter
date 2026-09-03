@@ -1,4 +1,5 @@
 import type {
+  BoxGeometry,
   Finding,
   FindingCategory,
   ImageRecord,
@@ -6,12 +7,14 @@ import type {
   PageSnapshot,
   PriceRecord,
   PriceStats,
+  Region,
   Severity,
 } from '../core/types.js';
 import { percentStat } from '../core/types.js';
 import { trigramSimilarity, truncate } from '../extract/text.js';
 import { align } from './align.js';
 import { createFinding, severityFor } from './findings.js';
+import { recordGeometryKey, type GeometryIndex } from './geometry-index.js';
 
 /**
  * Image and price comparison - Phase 3.3.
@@ -35,6 +38,61 @@ export interface AssetCompareOptions {
   /** Trigram similarity above which two price contexts are the same item. */
   textSimilarity: number;
   severities?: Partial<Record<FindingCategory, Severity>>;
+  /**
+   * Element boxes at the primary viewport, so an image or price finding can
+   * carry a screenshot of the thing it is about. Optional: without them the
+   * findings are unchanged apart from having no evidence.
+   */
+  sourceGeometry?: GeometryIndex | undefined;
+  targetGeometry?: GeometryIndex | undefined;
+}
+
+/**
+ * Box details for a record pair, either side of which may be absent.
+ *
+ * A one-sided box is the point rather than a shortcoming: an image missing from
+ * the target yields a source-only crop, which is exactly the evidence a reviewer
+ * needs - "here is what should be there".
+ */
+function recordBoxes<T extends { region: Region }>(
+  source: T | null | undefined,
+  target: T | null | undefined,
+  discriminator: (record: T) => string,
+  options: AssetCompareOptions,
+): Record<string, BoxGeometry> {
+  const details: Record<string, BoxGeometry> = {};
+
+  const sourceBox = source
+    ? options.sourceGeometry?.get(recordGeometryKey(source.region, discriminator(source)))
+    : undefined;
+  if (sourceBox) details['sourceBox'] = sourceBox;
+
+  const targetBox = target
+    ? options.targetGeometry?.get(recordGeometryKey(target.region, discriminator(target)))
+    : undefined;
+  if (targetBox) details['targetBox'] = targetBox;
+
+  return details;
+}
+
+const imageKey = (record: ImageRecord): string => record.assetKey;
+
+/**
+ * Prices carry their own geometry rather than being looked up by identity.
+ *
+ * They are extracted from JSON-LD, microdata, configured selectors and a text
+ * scan - not from the content node stream - so there is no node identity to
+ * join on. A JSON-LD price has no box at all, which is correct: it is metadata
+ * with nothing on screen to crop.
+ */
+function priceBoxes(
+  source: PriceRecord | null | undefined,
+  target: PriceRecord | null | undefined,
+): Record<string, BoxGeometry> {
+  const details: Record<string, BoxGeometry> = {};
+  if (source?.box) details['sourceBox'] = source.box;
+  if (target?.box) details['targetBox'] = target.box;
+  return details;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -90,6 +148,7 @@ export function compareImages(
           label: `Image missing on target: ${describeImage(pair.source)}`,
           expected: pair.source.src,
           actual: null,
+          details: recordBoxes(pair.source, null, imageKey, options),
         }),
       );
       continue;
@@ -110,6 +169,7 @@ export function compareImages(
           label: `Image only on target: ${describeImage(pair.target)}`,
           expected: null,
           actual: pair.target.src,
+          details: recordBoxes(null, pair.target, imageKey, options),
         }),
       );
       continue;
@@ -136,6 +196,7 @@ export function compareImages(
           label: `Alt text changed on image "${pair.source.assetKey}"`,
           expected: pair.source.alt,
           actual: pair.target.alt,
+          details: recordBoxes(pair.source, pair.target, imageKey, options),
         }),
       );
     }
@@ -161,6 +222,7 @@ export function compareImages(
           label: `Intrinsic size changed on image "${pair.source.assetKey}"`,
           expected: sizeDrift.expected,
           actual: sizeDrift.actual,
+          details: recordBoxes(pair.source, pair.target, imageKey, options),
         }),
       );
     }
@@ -266,6 +328,7 @@ export function comparePrices(
           label: `Price ${pair.source.raw} not found on target (${truncate(pair.source.context, 50)})`,
           expected: pair.source.amount,
           actual: null,
+          details: priceBoxes(pair.source, null),
         }),
       );
       continue;
@@ -286,6 +349,7 @@ export function comparePrices(
           label: `Price ${pair.target.raw} only on target (${truncate(pair.target.context, 50)})`,
           expected: null,
           actual: pair.target.amount,
+          details: priceBoxes(null, pair.target),
         }),
       );
       continue;
@@ -314,7 +378,11 @@ export function comparePrices(
           )})`,
           expected: pair.source.amount,
           actual: pair.target.amount,
-          details: { sourceRaw: pair.source.raw, targetRaw: pair.target.raw },
+          details: {
+            sourceRaw: pair.source.raw,
+            targetRaw: pair.target.raw,
+            ...priceBoxes(pair.source, pair.target),
+          },
         }),
       );
     } else {
@@ -338,6 +406,7 @@ export function comparePrices(
           label: `Currency changed from ${pair.source.currency} to ${pair.target.currency}`,
           expected: pair.source.currency,
           actual: pair.target.currency,
+          details: priceBoxes(pair.source, pair.target),
         }),
       );
     }
@@ -360,6 +429,7 @@ export function comparePrices(
           label: `Same price displayed differently: ${pair.source.raw} vs ${pair.target.raw}`,
           expected: pair.source.raw,
           actual: pair.target.raw,
+          details: priceBoxes(pair.source, pair.target),
         }),
       );
     }

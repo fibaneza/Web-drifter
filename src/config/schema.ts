@@ -180,6 +180,35 @@ export const thresholdsSchema = z
     geometryPercent: z.number().min(0).max(1).default(0.01),
     /** Length tolerance for computed CSS values, in pixels. */
     cssLengthPx: z.number().min(0).default(1),
+    /**
+     * Perceptual colour distance (0..1) below which a colour difference is not
+     * reported at all. Roughly 0.01 is imperceptible; 0.03 is where a difference
+     * becomes visible side by side.
+     */
+    cssColorTolerance: z.number().min(0).max(1).default(0.01),
+    /**
+     * CSS drift is graded rather than flat: a difference at or above the
+     * matching `*Warn*` threshold is a warning, anything smaller is information.
+     * Grading is what makes a restyle survivable - a report where a 1px nudge
+     * and a redesign read identically gets ignored wholesale.
+     */
+    cssColorDeltaWarn: z.number().min(0).max(1).default(0.03),
+    /** Absolute length change, in pixels, that makes a drift a warning. */
+    cssLengthWarnPx: z.number().min(0).default(4),
+    /**
+     * Relative length change that makes a drift a warning. Paired with the
+     * absolute threshold so 4px reads as serious on a 12px body font and minor
+     * on a 48px heading.
+     */
+    cssLengthWarnPercent: z.number().min(0).default(0.15),
+    /**
+     * Multiple of the geometry tolerance at which a layout drift becomes a
+     * warning. Expressed as a factor rather than a pixel count because the
+     * tolerance itself scales with viewport width - a fixed threshold would sit
+     * below the reporting gate on desktop and above it on mobile, making the
+     * information band unreachable at one end or the other.
+     */
+    cssGeometryWarnFactor: z.number().min(1).default(2),
     /** Absolute tolerance when comparing parsed price amounts. */
     priceEpsilon: z.number().min(0).default(0.001),
     /** Image dimension tolerance as a fraction. */
@@ -275,6 +304,15 @@ export const outputSchema = z
       .default(['json', 'html', 'markdown', 'junit']),
     /** Keep raw page snapshots so `drifter compare` can re-diff without re-crawling. */
     keepSnapshots: z.boolean().default(true),
+    /**
+     * Lowest severity that earns a screenshot crop.
+     *
+     * Cropping is the slowest part of writing a report and most findings are
+     * never opened, so the default keeps evidence on the ones people act on.
+     * Raise it to `warning` to also get crops for extra components and for CSS
+     * drift, which is graded no higher than a warning by design.
+     */
+    evidenceMinSeverity: z.enum(['error', 'warning', 'info']).default('error'),
   })
   .default({});
 

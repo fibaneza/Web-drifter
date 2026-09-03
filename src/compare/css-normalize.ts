@@ -1,4 +1,5 @@
 import { colord, extend, type Plugin } from 'colord';
+import labPluginImport from 'colord/plugins/lab';
 import namesPluginImport from 'colord/plugins/names';
 import { COLOR_VALUED_PROPERTIES, LENGTH_PROPERTIES } from '../extract/css-properties.js';
 
@@ -11,10 +12,15 @@ import { COLOR_VALUED_PROPERTIES, LENGTH_PROPERTIES } from '../extract/css-prope
  */
 const namesPlugin: Plugin =
   typeof namesPluginImport === 'function' ? namesPluginImport : namesPluginImport.default;
+const labPlugin: Plugin =
+  typeof labPluginImport === 'function' ? labPluginImport : labPluginImport.default;
 
-// Lets `white` and `transparent` parse. Computed styles are always returned as
-// rgb() by the browser, but config-supplied and embedded values may not be.
-extend([namesPlugin]);
+// names: lets `white` and `transparent` parse. Computed styles are always
+// returned as rgb() by the browser, but config-supplied and embedded values may
+// not be.
+// lab: provides `delta()`, the perceptual distance that decides whether a colour
+// difference is worth a warning or is invisible to a human.
+extend([namesPlugin, labPlugin]);
 
 /**
  * Computed-CSS value normalisation.
@@ -36,6 +42,8 @@ export type CssDifferenceKind =
   | 'equal'
   | 'value'
   | 'length'
+  /** A colour difference, carrying its perceptual distance. */
+  | 'color'
   /** Same first font, different fallbacks - visually identical in practice. */
   | 'font-fallback';
 
@@ -47,6 +55,11 @@ export interface CssComparison {
   normalizedTarget: string;
   /** Difference in pixels, for length properties. */
   deltaPx?: number;
+  /**
+   * Perceptual distance 0..1 for colour properties, where 0 is identical and 1
+   * is black against white. Around 0.03 is the threshold of visibility.
+   */
+  deltaE?: number;
 }
 
 /** Parse a CSS length to pixels. Returns null for non-lengths (`auto`, `normal`). */
@@ -132,6 +145,8 @@ export function normalizeCssValue(property: string, value: string): string {
 export interface CompareCssOptions {
   /** Pixel tolerance for length properties. */
   lengthTolerancePx: number;
+  /** Perceptual distance below which a colour difference is not reported at all. */
+  colorTolerance: number;
 }
 
 /**
@@ -143,6 +158,20 @@ export interface CompareCssOptions {
  * over a difference nobody can see, so it is classified separately and
  * downgraded by the caller.
  */
+/**
+ * Perceptual distance between two colours, or null when either does not parse.
+ *
+ * Computed styles arrive as rgb()/rgba(), so this normally succeeds; `none`,
+ * `currentcolor` and gradient values do not parse and fall through to an exact
+ * string comparison, which is the right answer for them.
+ */
+export function colorDelta(sourceValue: string, targetValue: string): number | null {
+  const source = colord(sourceValue);
+  const target = colord(targetValue);
+  if (!source.isValid() || !target.isValid()) return null;
+  return source.delta(target);
+}
+
 export function compareCssValue(
   property: string,
   sourceValue: string,
@@ -161,6 +190,19 @@ export function compareCssValue(
       return { equal: false, kind: 'font-fallback', normalizedSource, normalizedTarget };
     }
     return { equal: false, kind: 'value', normalizedSource, normalizedTarget };
+  }
+
+  if (COLOR_VALUED_PROPERTIES.has(property)) {
+    const deltaE = colorDelta(normalizedSource, normalizedTarget);
+    if (deltaE !== null) {
+      // A colour difference below the threshold of human vision is not drift.
+      // Without this, rounding a channel by one - which no user can see and
+      // every rewrite does - reports identically to black becoming white.
+      if (deltaE <= options.colorTolerance) {
+        return { equal: true, kind: 'equal', normalizedSource, normalizedTarget, deltaE };
+      }
+      return { equal: false, kind: 'color', normalizedSource, normalizedTarget, deltaE };
+    }
   }
 
   if (LENGTH_PROPERTIES.has(property)) {
