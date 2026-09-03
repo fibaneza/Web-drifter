@@ -315,6 +315,26 @@ export const outputSchema = z
     formats: z
       .array(z.enum(['json', 'html', 'markdown', 'junit']))
       .default(['json', 'html', 'markdown', 'junit']),
+    /**
+     * Where `drifter publish` uploads the zipped run.
+     *
+     * Upload goes through the AWS CLI, which is already installed and already
+     * authenticated on the agents this runs on - so no credential ever reaches
+     * this tool or its config.
+     */
+    publish: z
+      .object({
+        /** Bucket name, without the `s3://` scheme. */
+        bucket: z.string().optional(),
+        /** Key prefix within the bucket, e.g. `drift/vplates`. */
+        prefix: z.string().optional(),
+        /**
+         * Extra arguments for `aws s3 cp`, e.g. `['--sse', 'aws:kms']`.
+         * Passed as an array and never through a shell.
+         */
+        args: z.array(z.string()).default([]),
+      })
+      .default({}),
     /** Keep raw page snapshots so `drifter compare` can re-diff without re-crawling. */
     keepSnapshots: z.boolean().default(true),
     /**

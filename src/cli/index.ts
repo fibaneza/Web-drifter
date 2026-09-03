@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError } from 'commander';
@@ -17,6 +18,8 @@ import {
   type RunDiff,
 } from '../report/diff.js';
 import { renderDiffMarkdown } from '../report/diff-markdown.js';
+import { archiveRun } from '../publish/archive.js';
+import { s3Destination, uploadToS3 } from '../publish/s3.js';
 import { exitCodeFor, summarise } from '../report/write.js';
 import { ArtifactStore, formatBytes, listRuns } from '../store/artifact-store.js';
 import { writeInitConfig } from './init.js';
@@ -419,6 +422,79 @@ function printDiff(
 
   process.stdout.write(`Full detail: ${markdownPath}\n\n`);
 }
+
+/* --------------------------------------------------------------- publish -- */
+
+program
+  .command('publish')
+  .description('zip a stored run and upload it to S3 with the AWS CLI')
+  .option('--run <id>', 'run id (defaults to the most recent)')
+  .option('--bucket <name>', 'S3 bucket (overrides output.publish.bucket)')
+  .option('--prefix <path>', 'key prefix within the bucket')
+  .option('--s3-uri <uri>', 'full s3://bucket/prefix destination')
+  .option('--keep-archive', 'keep the local zip after uploading', false)
+  .option('--dry-run', 'build the archive and print the command without uploading', false)
+  .action(
+    async (options: {
+      run?: string;
+      bucket?: string;
+      prefix?: string;
+      s3Uri?: string;
+      keepArchive: boolean;
+      dryRun: boolean;
+    }) => {
+      await run(async (logger) => {
+        const config = await resolveConfig(program.opts<GlobalOptions>());
+        const store = await ArtifactStore.open(config.output.dir, options.run);
+
+        const fileName = `drift-${store.runId}.zip`;
+        // Resolved before archiving: a missing bucket should fail in a second,
+        // not after zipping a gigabyte of screenshots.
+        const destination = s3Destination({
+          bucket: options.bucket ?? config.output.publish.bucket,
+          prefix: options.prefix ?? config.output.publish.prefix,
+          uri: options.s3Uri,
+          fileName,
+        });
+
+        // Written beside the run rather than inside it, or the archive would be
+        // racing to include itself.
+        const archivePath = join(config.output.dir, fileName);
+        logger.info({ runId: store.runId }, 'archiving run');
+        const archive = await archiveRun(store.dir, archivePath);
+        logger.info(
+          { file: archive.file, entries: archive.entries, human: formatBytes(archive.bytes) },
+          'archive written',
+        );
+
+        const upload = await uploadToS3({
+          file: archive.file,
+          destination,
+          extraArgs: config.output.publish.args,
+          dryRun: options.dryRun,
+        });
+
+        if (!options.keepArchive && upload.uploaded) await rm(archive.file, { force: true });
+
+        process.stdout.write(`\n${'='.repeat(64)}\n`);
+        process.stdout.write(
+          `Run ${store.runId} \u00b7 ${archive.entries} files \u00b7 ${formatBytes(archive.bytes)}\n\n`,
+        );
+        if (upload.uploaded) {
+          process.stdout.write(`Uploaded to ${upload.destination}\n`);
+          if (options.keepArchive) process.stdout.write(`Archive kept at ${archive.file}\n`);
+        } else {
+          process.stdout.write(
+            `Dry run - nothing was uploaded.\n\n  ${upload.command}\n\n` +
+              `Archive left at ${archive.file}\n`,
+          );
+        }
+        process.stdout.write('\n');
+
+        return EXIT_OK;
+      });
+    },
+  );
 
 /* ---------------------------------------------------------------- doctor -- */
 

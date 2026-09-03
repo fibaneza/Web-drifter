@@ -109,6 +109,7 @@ open drifter-out/latest/index.html
 | `drifter report --run <id>`                 | Re-render reports from stored findings                             |
 | `drifter diff --since <id>`                 | Compare two stored runs: what is new, fixed or changed             |
 | `drifter doctor`                            | Crawl the source twice and diff it against itself to measure noise |
+| `drifter publish --bucket <name>`           | Zip a run and upload it to S3 with the AWS CLI                     |
 
 Exit codes: `0` clean or within budget · `1` findings exceed `thresholds.failOn`
 (or, for `diff`, new findings appeared) · `2` tool failure.
@@ -202,6 +203,7 @@ layout legitimately differs from a desktop one; that is not drift.
 | [Comparing two runs](docs/comparing-runs.md)        | `drifter diff` — what is new, fixed or changed since a baseline |
 | [Report structure](docs/reports.md)                 | The two navigation axes, screenshots, statistics                |
 | [Avoiding false positives](docs/false-positives.md) | What the tool handles, and what you should tune                 |
+| [Publishing a run](docs/publishing.md)              | `drifter publish` — zip a run and upload it to S3               |
 | [Azure DevOps pipeline](docs/ado-pipeline.md)       | Publishing reports and gating a build                           |
 
 ## Development

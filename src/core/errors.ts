@@ -43,6 +43,13 @@ export class BrowserError extends DrifterError {
   }
 }
 
+/** Archiving or uploading a run failed, or the AWS CLI is not installed. */
+export class PublishError extends DrifterError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 'E_PUBLISH', options);
+  }
+}
+
 export function toMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
