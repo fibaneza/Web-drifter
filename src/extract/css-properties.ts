@@ -41,6 +41,17 @@ export const COLOR_PROPERTIES = [
   'border-left-color',
   'outline-color',
   'opacity',
+  /**
+   * SVG paint. An inline icon set or logo recoloured in the rewrite is
+   * invisible to every other property here: the element's `color` is unchanged,
+   * its geometry is unchanged, and the asset key is unchanged because the
+   * markup is the asset. Both inherit, so a wrapper carries its icons' colour.
+   *
+   * On a non-SVG element these compute to a default that is identical on both
+   * sides, so they cost a comparison and produce no finding.
+   */
+  'fill',
+  'stroke',
 ] as const;
 
 export const BOX_PROPERTIES = [

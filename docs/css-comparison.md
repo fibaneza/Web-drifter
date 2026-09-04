@@ -39,7 +39,7 @@ Comparing everything produces a report nobody reads.
 | Group      | Properties                                                                                                                                                                                       |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Typography | `font-family`, `font-size`, `font-weight`, `font-style`, `line-height`, `letter-spacing`, `word-spacing`, `text-transform`, `text-decoration-line`, `text-align`, `white-space`, `text-overflow` |
-| Colour     | `color`, `background-color`, `border-*-color`, `outline-color`, `opacity`                                                                                                                        |
+| Colour     | `color`, `background-color`, `border-*-color`, `outline-color`, `opacity`, `fill`, `stroke`                                                                                                      |
 | Box        | `margin-*`, `padding-*`, `border-*-width`, `border-*-style`, `border-*-radius`, `box-sizing`                                                                                                     |
 | Layout     | `display`, `position`, `flex-*`, `justify-content`, `align-*`, `gap`, `grid-template-*`, `float`, `clear`, `z-index`, `overflow-*`, `vertical-align`                                             |
 | Effects    | `box-shadow`, `text-shadow`, `transform`, `filter`, `background-*`, `visibility`, `cursor`                                                                                                       |
@@ -60,6 +60,33 @@ routinely produce values that are textually different and visually identical.
 | `16px` vs `16.0000px` vs `15.9998px`                 | Parsed to px, compared with `thresholds.cssLengthPx` |
 | `"Helvetica Neue", Arial` vs `Helvetica Neue, Arial` | Stack unquoted, lowercased                           |
 | `0 1px 2px rgba(0,0,0,.5)` whitespace                | Collapsed                                            |
+| `0 1px 2px #000` vs `0 1px 2px rgb(0,0,0)`           | Colours inside compound values canonicalised too     |
+
+### SVG paint
+
+`fill` and `stroke` are in the colour group because nothing else can see them.
+An inline icon set or logo recoloured in the rewrite leaves the element's
+`color` unchanged, its geometry unchanged, and its asset key unchanged — the
+markup _is_ the asset. Both properties inherit, so a wrapper carries the colour
+of the icons inside it. On a non-SVG element they compute to a default that is
+identical on both sides, so they cost a comparison and produce no finding.
+
+### Colours inside shadows and gradients
+
+`box-shadow` and `background-image` are where a rewrite most often changes a
+brand colour, and they are compound values rather than colours. Comparing them
+as strings meant a gradient whose colour moved by one channel reported
+identically to one that went from navy to orange, and neither carried a
+perceptual distance.
+
+A compound value is now split into its **structure** and its **colours**. When
+only the colours differ, it is judged exactly as `color` is — below
+`cssColorDeltaWarn` it is not drift at all, above it, it is a colour finding
+carrying its distance.
+
+When the structure differs too — a gradient that gained a stop, a shadow that
+moved — it stays a plain value difference. Calling that a colour change would
+hide the structural change behind a delta.
 
 ### Sub-pixel lengths
 

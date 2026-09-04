@@ -122,6 +122,47 @@ function normalizeCompound(value: string): string {
     .toLowerCase();
 }
 
+/**
+ * Colour tokens embedded in a compound value.
+ *
+ * Matches function and hex forms only. Computed styles are what actually get
+ * compared and Chromium resolves every colour in a gradient or shadow to
+ * `rgb()`/`rgba()`, so named colours are not worth the risk of rewriting a
+ * keyword that merely looks like one - `linear-gradient(to right, ...)` has no
+ * shortage of bare words.
+ */
+const COLOR_TOKEN = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/gi;
+
+export interface CompoundValue {
+  /** The value with every colour replaced by a placeholder. */
+  skeleton: string;
+  /** The colours, in the order they appeared. */
+  colors: string[];
+}
+
+/**
+ * Split a compound value into its structure and its colours.
+ *
+ * This is what lets `box-shadow` and `background-image` be judged the way a
+ * flat colour property is. A gradient whose brand colour changed differs only
+ * in its colours, and comparing the whole string means the report can say no
+ * more than "these two strings differ" - about the single most visible kind of
+ * change a rewrite can make.
+ */
+export function splitCompoundValue(value: string): CompoundValue {
+  const colors: string[] = [];
+  const skeleton = value.replace(COLOR_TOKEN, (match) => {
+    colors.push(match);
+    return '\u0000';
+  });
+  return { skeleton, colors };
+}
+
+/** Canonicalise every colour embedded in a compound value. */
+export function normalizeEmbeddedColors(value: string): string {
+  return value.replace(COLOR_TOKEN, (match) => normalizeColor(match));
+}
+
 /** Normalise a computed value for display and comparison. */
 export function normalizeCssValue(property: string, value: string): string {
   const trimmed = value.trim();
@@ -137,9 +178,10 @@ export function normalizeCssValue(property: string, value: string): string {
   }
 
   // Shadows, transforms, gradients and background images all embed colours and
-  // lengths; normalising whitespace and case removes most spurious differences
-  // without needing a full CSS value parser.
-  return normalizeCompound(trimmed);
+  // lengths. Normalising whitespace and case removes most spurious differences
+  // without needing a full CSS value parser; canonicalising the colours inside
+  // removes the rest, so `#000` and `rgb(0, 0, 0)` in a shadow are one value.
+  return normalizeCompound(normalizeEmbeddedColors(trimmed));
 }
 
 export interface CompareCssOptions {
@@ -205,6 +247,12 @@ export function compareCssValue(
     }
   }
 
+  // A compound value differing only in its colours is a colour difference, and
+  // deserves the same perceptual judgement as `color` itself rather than being
+  // reported as two opaque strings.
+  const embedded = compareEmbeddedColors(normalizedSource, normalizedTarget, options);
+  if (embedded) return { ...embedded, normalizedSource, normalizedTarget };
+
   if (LENGTH_PROPERTIES.has(property)) {
     const sourcePx = parsePx(normalizedSource);
     const targetPx = parsePx(normalizedTarget);
@@ -218,6 +266,39 @@ export function compareCssValue(
   }
 
   return { equal: false, kind: 'value', normalizedSource, normalizedTarget };
+}
+
+/**
+ * Compare two compound values that may differ only in their colours.
+ *
+ * Returns null when they differ structurally too - a gradient that gained a
+ * stop, a shadow that moved - because that is not a colour difference and
+ * pretending otherwise would hide the structural change behind a delta.
+ */
+function compareEmbeddedColors(
+  normalizedSource: string,
+  normalizedTarget: string,
+  options: CompareCssOptions,
+): Omit<CssComparison, 'normalizedSource' | 'normalizedTarget'> | null {
+  const source = splitCompoundValue(normalizedSource);
+  const target = splitCompoundValue(normalizedTarget);
+
+  if (source.colors.length === 0) return null;
+  if (source.colors.length !== target.colors.length) return null;
+  if (source.skeleton !== target.skeleton) return null;
+
+  let worst = 0;
+  for (let i = 0; i < source.colors.length; i += 1) {
+    const delta = colorDelta(source.colors[i] ?? '', target.colors[i] ?? '');
+    // An unparseable colour means this is not a comparison we can make.
+    if (delta === null) return null;
+    worst = Math.max(worst, delta);
+  }
+
+  if (worst <= options.colorTolerance) {
+    return { equal: true, kind: 'equal', deltaE: worst };
+  }
+  return { equal: false, kind: 'color', deltaE: worst };
 }
 
 /**
