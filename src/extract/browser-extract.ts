@@ -20,6 +20,12 @@ export interface ExtractOptions {
   cssProperties: string[];
   /** Cap on elements scanned for background images, to bound cost. */
   maxElementScan: number;
+  /**
+   * Landmark inference for pages that declare none, as `[region, pattern]`
+   * pairs applied in order. Passed as data because this function is serialised
+   * into the page and cannot import anything.
+   */
+  regionHints: Array<[string, string]>;
 }
 
 export interface RawBox {
@@ -152,6 +158,38 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
     return true;
   };
 
+  /**
+   * Does this document declare any landmark at all?
+   *
+   * Decided once, for the whole page. When it does, its landmarks are trusted
+   * completely and class names are never consulted - second-guessing a page
+   * that marked itself up properly could only make things worse. The `id` and
+   * `class` heuristic exists solely for markup that offers nothing else.
+   */
+  const hasLandmarks =
+    document.querySelector(
+      'header, nav, main, footer, aside, [role="banner"], [role="navigation"], ' +
+        '[role="main"], [role="contentinfo"], [role="complementary"]',
+    ) !== null;
+
+  const hints = options.regionHints.map(
+    ([region, pattern]) => [region, new RegExp(pattern)] as const,
+  );
+
+  const inferRegion = (node: Element): string | null => {
+    const className = typeof node.className === 'string' ? node.className : '';
+    const identity = `${className} ${node.id ?? ''}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    if (identity === '') return null;
+
+    for (const [region, pattern] of hints) {
+      if (pattern.test(identity)) return region;
+    }
+    return null;
+  };
+
   const regionOf = (element: Element): string => {
     let node: Element | null = element;
     while (node && node !== document.documentElement) {
@@ -169,6 +207,11 @@ export function extractInPage(options: ExtractOptions): RawPageModel {
       if (tag === 'main') return 'main';
       if (tag === 'header' && isPageLevelScope(node)) return 'header';
       if (tag === 'footer' && isPageLevelScope(node)) return 'footer';
+
+      if (!hasLandmarks) {
+        const inferred = inferRegion(node);
+        if (inferred !== null) return inferred;
+      }
 
       node = node.parentElement;
     }

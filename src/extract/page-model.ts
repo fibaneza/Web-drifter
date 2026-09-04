@@ -18,6 +18,7 @@ import {
   type UrlNormalizeOptions,
 } from '../map/url-normalize.js';
 import { extractInPage, type ExtractOptions, type RawPageModel } from './browser-extract.js';
+import { DEFAULT_REGION_HINTS } from './regions.js';
 import { buildImageRecords } from './images.js';
 import { buildPriceRecords } from './prices.js';
 import { contentHash, nodeKey, normalizeText } from './text.js';
@@ -86,6 +87,8 @@ export async function capturePageModel(
     priceSelectors: [...options.priceSelectors],
     cssProperties: [...options.cssProperties],
     maxElementScan: options.maxElementScan ?? 5000,
+    // Only consulted for a document that declares no landmark of its own.
+    regionHints: DEFAULT_REGION_HINTS.map((hint) => [hint.region, hint.pattern]),
   };
 
   const raw = await page.evaluate(extractInPage, extractOptions);

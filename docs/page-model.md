@@ -104,6 +104,27 @@ flowchart TD
 A footer paragraph is never a candidate for a body paragraph, however similar
 the words. A plausible-looking wrong match is worse than no match.
 
+Region comes from ARIA roles and HTML5 sectioning elements — `role="banner"`,
+`<header>`, `<nav>`, `<main>`, `<footer>`, `<aside>`. A `<header>` scoped inside
+an `<article>` is that article's header, not the site masthead, so it does not
+claim the landmark.
+
+**When a page declares no landmark at all**, region is inferred from `id` and
+`class` instead: `sc-header` and `masthead` are a header, `sc-footer` and
+`colophon` a footer, `navbar` and `breadcrumbs` a nav, and so on. Short words
+are matched as whole tokens, so `domain` is not `main`.
+
+This exists for one specific failure. A rewrite emits landmarks; the CMS it
+replaces emits `<div class="sc-header">` and nothing else. Without inference
+every legacy node lands in `other` while every target node lands in a real
+region — and since alignment never crosses a region, **nothing matches**: a
+perfect migration reports as total content loss on the source and total addition
+on the target, simultaneously.
+
+Inference runs only when a page offers nothing else. A document that marked
+itself up properly is trusted completely, because second-guessing it with class
+names could only make it worse.
+
 ### 2. Anchor on unique keys
 
 A heading that appears exactly once on each page is the same heading, wherever
