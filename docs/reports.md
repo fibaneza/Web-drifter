@@ -55,10 +55,16 @@ drifter-out/<runId>/
 │   ├── index.html                CSS drift summary, grouped by property
 │   └── <device>.html             CSS drift at one device
 │
+├── visual.html                   ── VISUAL MAP ──
+│                                 Every visible difference drawn on the page it
+│                                 appears on, numbered, both sides side by side
+│
 ├── links-report.html             Broken links, redirect chains, path mismatches
 ├── coverage-report.html          Pages missing on target / extra on target
 │
 └── assets/
+    ├── visual/
+    │   └── <slug>@<device>-{source,target}.png   Full page, markers drawn on
     └── screenshots/
         ├── <slug>/<device>/source.png     Full page
         ├── <slug>/<device>/target.png
@@ -163,6 +169,36 @@ enormous and says nothing.
 
 > The pixel overlay illustrates a finding that content comparison already
 > proved. Nothing is ever reported _because_ pixels differ.
+
+## The visual map
+
+`visual.html` answers a different question from the rest of the report. A
+findings list answers "what is wrong"; the visual map answers **"where do I
+look"** - the two full-page captures side by side, every visible difference
+boxed and numbered, with a legend saying what each number is.
+
+It marks, it does not detect. The comparison has already decided what changed,
+which is why a marker carries a sentence — _"Price changed from $1,299.00 to
+$1,399.00"_ — rather than a red smear. Boxes are coloured by severity, and a
+number appearing on one side but not the other means the element exists on only
+one site.
+
+Three things are deliberately **not** marked:
+
+| Excluded                | Why                                                                   |
+| ----------------------- | --------------------------------------------------------------------- |
+| Typography              | Real drift, but boxing every text node buries the few you can act on  |
+| Markup annotation       | `alt` text, link targets, meta fields — invisible in a screenshot     |
+| Sub-perceptual movement | An element that shifted a pixel or two is noise on any real migration |
+
+`css.property-drift` is marked only for the `color` and `effects` property
+groups; box spacing is left out because the same difference already arrives as
+`css.layout-drift` with a box to point at. Movement must reach 8 CSS pixels on
+some edge, and a box under roughly 80px² is skipped — below that the marker is
+bigger than the thing it points at.
+
+Everything excluded here is still in the CSS report. Nothing is hidden; it is
+sorted.
 
 ## Getting from a finding to the page
 

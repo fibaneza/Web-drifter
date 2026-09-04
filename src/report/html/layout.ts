@@ -195,6 +195,21 @@ code.remapped { color: var(--ink); border-bottom: 1px dotted var(--muted); }
 .pager .pages { display: flex; flex-wrap: wrap; gap: 8px; }
 .pager a { text-decoration: none; }
 .empty { padding: 26px; text-align: center; color: var(--muted); }
+
+/* Visual map: the two captures side by side, each carrying the same numbers.
+   Height-constrained because a full-page screenshot of a long page runs to
+   several thousand pixels, and two at full height would put the legend an
+   unusable distance below the images it describes. */
+.visual-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+@media (max-width: 900px) { .visual-pair { grid-template-columns: 1fr; } }
+.visual-pair figure { margin: 0; min-width: 0; }
+.visual-pair figcaption { font-weight: 600; margin-bottom: 6px; }
+.visual-pair img {
+  width: 100%; height: auto; max-height: 70vh; object-fit: contain; object-position: top;
+  border: 1px solid var(--line); border-radius: 6px; background: #ffffff;
+}
+.visual-legend { margin: 8px 0 0; padding-left: 24px; }
+.visual-legend li { margin: 4px 0; }
 footer { padding: 20px 24px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
 `;
 
@@ -320,6 +335,7 @@ export function standardNav(root: string, current: string): NavLink[] {
   const links: Array<[string, string]> = [
     [`${root}index.html`, 'Overview'],
     [`${root}pages/index.html`, 'By page'],
+    [`${root}visual.html`, 'Visual'],
     [`${root}evidence.html`, 'Evidence'],
     [`${root}css-report.html`, 'CSS'],
     [`${root}links-report.html`, 'Links'],

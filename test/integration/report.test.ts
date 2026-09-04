@@ -381,6 +381,49 @@ describe('report (end to end)', () => {
     );
   });
 
+  /* ----------------------------- visual map ------------------------------- */
+
+  it('maps visible differences onto the full-page captures', async () => {
+    const html = await read('visual.html');
+
+    // One pair of images per affected page, and a legend entry per marker.
+    const pairs = (html.match(/class="visual-pair"/g) ?? []).length;
+    const legend = (html.match(/<li value=/g) ?? []).length;
+    assert.ok(pairs > 0, 'no page was mapped');
+    assert.ok(legend >= pairs, 'fewer legend entries than mapped pages');
+
+    const dir = join(reportDir, 'assets', 'visual');
+    assert.ok(existsSync(dir), 'no visual directory');
+
+    const files = await collectFiles(dir, '.png');
+    assert.ok(files.length > 0, 'no annotated images written');
+    for (const file of files.slice(0, 6)) {
+      assert.ok((await stat(file)).size > 0, `${file} is empty`);
+    }
+
+    // Both sides are annotated, so a marker present on one and absent on the
+    // other reads as "this exists only on the legacy site".
+    const names = files.map((f) => f.split('/').pop() ?? '');
+    assert.ok(
+      names.some((n) => n.endsWith('-source.png')),
+      'no annotated source capture',
+    );
+    assert.ok(
+      names.some((n) => n.endsWith('-target.png')),
+      'no annotated target capture',
+    );
+  });
+
+  it('gives each marker a sentence rather than only a colour', async () => {
+    const html = await read('visual.html');
+    // The whole point of driving the map from findings instead of from pixels.
+    assert.match(html, /<code>(content|price|image|css)\.[a-z-]+<\/code>/);
+  });
+
+  it('reaches the visual map from the standard navigation', async () => {
+    assert.match(await read('index.html'), /href="visual\.html"/);
+  });
+
   /* ------------------------------ exit code ------------------------------- */
 
   it('exits non-zero when errors exceed the configured budget', () => {

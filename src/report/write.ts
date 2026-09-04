@@ -31,6 +31,8 @@ import {
 import { renderJUnit } from './junit.js';
 import { renderMarkdown } from './markdown.js';
 import { generateEvidence } from './screenshots.js';
+import { generateVisualMaps, type VisualPageMap } from './visual.js';
+import { renderVisualReport } from './html/visual-page.js';
 
 /**
  * Report writing.
@@ -80,6 +82,7 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
   });
 
   let evidence: EvidenceIndex = new Map();
+  let visualMaps: VisualPageMap[] = [];
   if (!options.skipEvidence && formats.has('html')) {
     // Screenshots are written in device pixels; element geometry is in CSS
     // pixels. The crop needs the ratio, which only the device profiles know.
@@ -98,6 +101,16 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
       findings: options.findings,
       mapping: createPathMapping(config.urlMapping),
       deviceScale,
+      logger,
+    });
+
+    visualMaps = await generateVisualMaps({
+      store: options.store,
+      outDir,
+      findings: options.findings,
+      mapping: createPathMapping(config.urlMapping),
+      deviceScale,
+      primaryViewport: config.primaryViewport,
       logger,
     });
   }
@@ -145,6 +158,7 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
 
     files.push(
       ['index.html', renderOverview(context)],
+      ['visual.html', renderVisualReport(visualMaps)],
       ['css-report.html', renderCssReport(context)],
       ['links-report.html', renderLinksReport(context)],
       ['coverage-report.html', renderCoverageReport(context)],
