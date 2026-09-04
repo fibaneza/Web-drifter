@@ -17,6 +17,77 @@ const regexLike = z
   .union([z.instanceof(RegExp), z.string()])
   .transform((v) => (typeof v === 'string' ? new RegExp(v) : v));
 
+/**
+ * Timing fields that describe how long a site takes to settle.
+ *
+ * Split out from the rest of `stabilization` because these - and only these -
+ * may be overridden per side. A legacy server-rendered CMS and a React rewrite
+ * genuinely differ in how long they need, and forcing one budget on both means
+ * either capturing the rewrite half-hydrated or paying its hydration wait on
+ * every page of a site that never needed it.
+ *
+ * Everything else in `stabilization` stays global on purpose: locale, timezone
+ * and the clock/random freezes must be IDENTICAL on both sides or the
+ * comparison is not like-for-like, and a per-side override would silently make
+ * it unfair.
+ */
+const pageTimingShape = {
+  /** Quiet period with no DOM mutations and no in-flight requests, in ms. */
+  quietMs: z.number().int().positive().default(500),
+  /** Hard ceiling on waiting for the page to settle, in ms. */
+  readyTimeoutMs: z.number().int().positive().default(30_000),
+  /**
+   * Minimum wait after the load event before a page may be declared ready.
+   * Quiescence cannot distinguish "finished rendering" from "not started
+   * yet", so this floor gives a late-hydrating framework time to begin.
+   * Defaults to `quietMs` when omitted.
+   */
+  minWaitMs: z.number().int().min(0).optional(),
+  /**
+   * How long to wait after load for a page that has not mutated the DOM at
+   * all to render something.
+   *
+   * A client-side router fetches, then renders; until it does, the page is
+   * perfectly quiet and looks "settled" while still showing a placeholder.
+   * Capturing then records the placeholder - and can make two different
+   * routes hash identically, so one is discarded as a duplicate.
+   *
+   * Only pages that never mutate pay this cost, so a fully server-rendered
+   * site can set it to 0.
+   */
+  awaitFirstRenderMs: z.number().int().min(0).default(1000),
+  /** Scroll to the bottom and back to trigger lazy-loaded content. */
+  scrollThroughPage: z.boolean().default(true),
+  /**
+   * Per-path timeout overrides for pages known to be slow - report builders,
+   * search result pages, anything fronting a slow upstream. The first
+   * matching entry wins.
+   */
+  slowPages: z
+    .array(
+      z.object({
+        pattern: regexLike,
+        navigationTimeoutMs: z.number().int().positive().optional(),
+        readyTimeoutMs: z.number().int().positive().optional(),
+        quietMs: z.number().int().positive().optional(),
+      }),
+    )
+    .default([]),
+};
+
+/**
+ * Per-side timing overrides. Every field falls back to the global value.
+ *
+ * Strict on purpose: the fields deliberately absent here - `locale`,
+ * `timezoneId`, the clock and random freezes - must be identical on both sides
+ * for the comparison to be like-for-like. Stripping such a key silently would
+ * leave someone believing they had set it, so an attempt is a config error
+ * naming the offending field. It catches ordinary typos for free.
+ */
+export const siteStabilizationSchema = z.object(pageTimingShape).partial().strict();
+
+export type SiteStabilization = z.output<typeof siteStabilizationSchema>;
+
 export const siteSchema = z.object({
   /** Label used in reports, e.g. "legacy" / "react". */
   name: z.string().min(1),
@@ -24,6 +95,12 @@ export const siteSchema = z.object({
   baseUrl: httpUrl,
   /** Extra headers sent with every request (e.g. a preview bypass token). */
   headers: z.record(z.string()).default({}),
+  /**
+   * Timing overrides for this side only, merged over the global
+   * `stabilization`. Use it when one side is slower than the other - a React
+   * rewrite that hydrates late is the usual reason.
+   */
+  stabilization: siteStabilizationSchema.optional(),
 });
 
 export const deviceProfileSchema = z.object({
@@ -238,45 +315,7 @@ export const thresholdsSchema = z
 
 export const stabilizationSchema = z
   .object({
-    /** Quiet period with no DOM mutations and no in-flight requests, in ms. */
-    quietMs: z.number().int().positive().default(500),
-    /** Hard ceiling on waiting for the page to settle, in ms. */
-    readyTimeoutMs: z.number().int().positive().default(30_000),
-    /**
-     * Minimum wait after the load event before a page may be declared ready.
-     * Quiescence cannot distinguish "finished rendering" from "not started
-     * yet", so this floor gives a late-hydrating framework time to begin.
-     * Defaults to `quietMs` when omitted.
-     */
-    minWaitMs: z.number().int().min(0).optional(),
-    /**
-     * How long to wait after load for a page that has not mutated the DOM at
-     * all to render something.
-     *
-     * A client-side router fetches, then renders; until it does, the page is
-     * perfectly quiet and looks "settled" while still showing a placeholder.
-     * Capturing then records the placeholder - and can make two different
-     * routes hash identically, so one is discarded as a duplicate.
-     *
-     * Only pages that never mutate pay this cost, so a fully server-rendered
-     * site can set it to 0.
-     */
-    awaitFirstRenderMs: z.number().int().min(0).default(1000),
-    /**
-     * Per-path timeout overrides for pages known to be slow - report builders,
-     * search result pages, anything fronting a slow upstream. The first
-     * matching entry wins.
-     */
-    slowPages: z
-      .array(
-        z.object({
-          pattern: regexLike,
-          navigationTimeoutMs: z.number().int().positive().optional(),
-          readyTimeoutMs: z.number().int().positive().optional(),
-          quietMs: z.number().int().positive().optional(),
-        }),
-      )
-      .default([]),
+    ...pageTimingShape,
     /** Disable CSS animations and transitions before capture. */
     freezeAnimations: z.boolean().default(true),
     /** Pin Date/performance so rendered timestamps are stable. */
@@ -286,12 +325,33 @@ export const stabilizationSchema = z
     /** Replace Math.random with a seeded PRNG to stabilise A/B bucketing. */
     seedRandom: z.boolean().default(true),
     randomSeed: z.number().int().default(1),
-    /** Scroll to the bottom and back to trigger lazy-loaded content. */
-    scrollThroughPage: z.boolean().default(true),
     locale: z.string().default('en-US'),
     timezoneId: z.string().default('UTC'),
   })
   .default({});
+
+/**
+ * The timing settings that apply to one side.
+ *
+ * Merged field by field rather than wholesale: a side that overrides only
+ * `awaitFirstRenderMs` keeps every other global value, which is what makes the
+ * override safe to reach for.
+ */
+export function stabilizationFor(
+  config: { stabilization: Stabilization; source: Site; target: Site },
+  side: 'source' | 'target',
+): Stabilization {
+  const override = config[side].stabilization;
+  if (!override) return config.stabilization;
+
+  const merged: Stabilization = { ...config.stabilization };
+  for (const [key, value] of Object.entries(override)) {
+    if (value !== undefined) {
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
+}
 
 export const browserSchema = z
   .object({
@@ -414,6 +474,8 @@ export const configSchema = z
   });
 
 /** Fully-resolved configuration, with every default applied. */
+export type Site = z.output<typeof siteSchema>;
+export type Stabilization = z.output<typeof stabilizationSchema>;
 export type DrifterConfig = z.output<typeof configSchema>;
 /** What a user actually writes in a config file. */
 export type DrifterConfigInput = z.input<typeof configSchema>;

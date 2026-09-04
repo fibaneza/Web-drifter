@@ -202,6 +202,40 @@ stabilization: {
 Pages whose readiness gate timed out are flagged **slow capture** in the report,
 so their findings can be read with appropriate suspicion.
 
+### 6. Give the slower side room, not both
+
+The two sides rarely need the same budget. A server-rendered CMS is ready almost
+immediately; a React rewrite fetches, then renders, and is perfectly quiet in
+between — so quiescence declares it settled while it still shows a placeholder,
+and the capture records "Loading…" as total content loss.
+
+The fix is `awaitFirstRenderMs`, and it belongs on the side that needs it:
+
+```ts
+source: { name: 'legacy', baseUrl: 'https://legacy.example.com' },
+target: {
+  name: 'react',
+  baseUrl: 'https://new.example.com',
+  stabilization: {
+    awaitFirstRenderMs: 3000,   // wait for the router's first paint
+    minWaitMs: 1000,            // floor for late-starting hydration
+    quietMs: 800,
+  },
+},
+```
+
+Every field falls back to the global `stabilization` value, so overriding one
+setting keeps the rest. Setting these globally instead would make the legacy
+side pay the same wait on every page — at `awaitFirstRenderMs: 3000` across a
+thousand pages, roughly fifty minutes for nothing.
+
+Only timing may be overridden per side: `quietMs`, `readyTimeoutMs`,
+`minWaitMs`, `awaitFirstRenderMs`, `scrollThroughPage` and `slowPages`.
+`locale`, `timezoneId` and the clock and random freezes stay global, because a
+per-side difference there would make the comparison unfair rather than merely
+slower. Naming one of them in a per-side block is a config error, not a silently
+ignored key.
+
 ## Deliberate non-features
 
 **Pixel comparison never gates anything.** Anti-aliasing, font hinting and

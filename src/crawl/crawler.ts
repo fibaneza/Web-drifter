@@ -1,7 +1,8 @@
 import pLimit from 'p-limit';
 import type { Response } from 'playwright';
 import type { DeviceProfile } from '../config/devices.js';
-import type { DrifterConfig } from '../config/schema.js';
+import { stabilizationFor } from '../config/schema.js';
+import type { DrifterConfig, Stabilization } from '../config/schema.js';
 import { CaptureError, toMessage } from '../core/errors.js';
 import type { Logger } from '../core/logger.js';
 import {
@@ -54,6 +55,7 @@ export interface CrawlSideOptions {
 export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> {
   const { side, config, devices, primaryDevice, pool, store, logger } = options;
   const site = side === 'source' ? config.source : config.target;
+  const stabilization = stabilizationFor(config, side);
   const startedAt = Date.now();
 
   const guard = createOriginGuard(
@@ -146,6 +148,7 @@ export async function crawlSide(options: CrawlSideOptions): Promise<CrawlStats> 
               pool,
               guard,
               cssProperties,
+              stabilization,
               logger,
               store,
               captureScreenshots: options.captureScreenshots ?? true,
@@ -213,6 +216,8 @@ interface CapturePageOptions {
   pool: BrowserPool;
   guard: ReturnType<typeof createOriginGuard>;
   cssProperties: string[];
+  /** This side's timing settings, already merged over the global ones. */
+  stabilization: Stabilization;
   logger: Logger;
   store: ArtifactStore;
   captureScreenshots: boolean;
@@ -285,7 +290,7 @@ function preferredCapture(a: PageSnapshot | null, b: PageSnapshot): PageSnapshot
 
 /** Capture one page at every enabled viewport and assemble its snapshot. */
 async function capturePage(options: CapturePageOptions): Promise<PageSnapshot> {
-  const { url, config, devices, primaryDevice, pool, guard, side } = options;
+  const { url, config, devices, primaryDevice, pool, guard, side, stabilization } = options;
   const startedAt = Date.now();
 
   const pathKey = canonicalizeUrl(url, config.urlMapping).key;
@@ -293,14 +298,12 @@ async function capturePage(options: CapturePageOptions): Promise<PageSnapshot> {
     pathKey,
     {
       navigationTimeoutMs: config.crawl.navigationTimeoutMs,
-      readyTimeoutMs: config.stabilization.readyTimeoutMs,
-      quietMs: config.stabilization.quietMs,
-      awaitFirstRenderMs: config.stabilization.awaitFirstRenderMs,
-      ...(config.stabilization.minWaitMs === undefined
-        ? {}
-        : { minWaitMs: config.stabilization.minWaitMs }),
+      readyTimeoutMs: stabilization.readyTimeoutMs,
+      quietMs: stabilization.quietMs,
+      awaitFirstRenderMs: stabilization.awaitFirstRenderMs,
+      ...(stabilization.minWaitMs === undefined ? {} : { minWaitMs: stabilization.minWaitMs }),
     },
-    config.stabilization.slowPages,
+    stabilization.slowPages,
   );
 
   const errors: string[] = [];
@@ -345,7 +348,7 @@ async function capturePage(options: CapturePageOptions): Promise<PageSnapshot> {
         );
       }
 
-      if (config.stabilization.scrollThroughPage) {
+      if (stabilization.scrollThroughPage) {
         await scrollThroughPage(page);
         await settleImages(page);
         // Scrolling triggers lazy loading, and lazily-loaded content is NEW
