@@ -33,6 +33,7 @@ import { renderMarkdown } from './markdown.js';
 import { generateEvidence } from './screenshots.js';
 import { generateVisualMaps, type VisualPageMap } from './visual.js';
 import { renderVisualReport } from './html/visual-page.js';
+import { renderValuesReport } from './html/values-page.js';
 
 /**
  * Report writing.
@@ -158,6 +159,7 @@ export async function writeReport(options: WriteReportOptions): Promise<WriteRep
 
     files.push(
       ['index.html', renderOverview(context)],
+      ['values.html', renderValuesReport(context)],
       ['visual.html', renderVisualReport(visualMaps)],
       ['css-report.html', renderCssReport(context)],
       ['links-report.html', renderLinksReport(context)],

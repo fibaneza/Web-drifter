@@ -125,6 +125,44 @@ Inference runs only when a page offers nothing else. A document that marked
 itself up properly is trusted completely, because second-guessing it with class
 names could only make it worse.
 
+### Exact equality, and what similarity is _not_ for
+
+Similarity decides **pairing only** — which source node is the same node as
+which target node. It never decides whether a difference is acceptable. Two
+paired nodes whose text is not identical are always a finding, always an error.
+There is no tolerance band.
+
+That separation matters because similarity is actively misleading as a measure
+of importance:
+
+| Similarity | Change                                                              | Verdict  |
+| ---------- | ------------------------------------------------------------------- | -------- |
+| 0.83       | "Fees are **non-refundable**" → "Fees are refundable"               | serious  |
+| 0.69       | "You must renew before the expiry date" → "Renew before it expires" | harmless |
+
+Ranked by similarity the dangerous change looks safer than the harmless one, so
+findings are never ordered by it. Instead, drift is split by whether an
+**extractable value** moved:
+
+- `content.drift` — the wording changed and every amount, date, duration,
+  contact detail and negation survived it. A rewrite.
+- `content.value-drift` — a fee, date, duration, contact detail, negation or
+  obligation actually changed. A revision.
+
+Both are errors. The split exists to rank and to name — value drift sorts first
+and says what moved (`amount: $49.99 → $59.99`) — never to excuse. Extraction is
+plain pattern matching in `src/compare/critical-values.ts`: no model, no network,
+deterministic, so finding ids stay stable and `doctor` can measure it.
+
+Obligation words (`may`, `must`, `should`, `required`) are counted only when the
+sentence is **otherwise identical**. Turning a sentence into an imperative drops
+a modal without changing the instruction, so a modal lost alongside half the
+words says nothing on its own.
+
+The deliberate limit: this catches changed _values_, not changed _meaning_. A
+rewrite that alters intent while touching no number and no negation is still
+reported as drift — it just is not singled out.
+
 ### 2. Anchor on unique keys
 
 A heading that appears exactly once on each page is the same heading, wherever

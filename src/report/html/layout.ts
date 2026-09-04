@@ -194,6 +194,8 @@ code.remapped { color: var(--ink); border-bottom: 1px dotted var(--muted); }
 }
 .pager .pages { display: flex; flex-wrap: wrap; gap: 8px; }
 .pager a { text-decoration: none; }
+del { text-decoration: line-through; opacity: 0.75; }
+ins { text-decoration: none; font-weight: 600; }
 .empty { padding: 26px; text-align: center; color: var(--muted); }
 
 /* Visual map: the two captures side by side, each carrying the same numbers.
@@ -335,6 +337,7 @@ export function standardNav(root: string, current: string): NavLink[] {
   const links: Array<[string, string]> = [
     [`${root}index.html`, 'Overview'],
     [`${root}pages/index.html`, 'By page'],
+    [`${root}values.html`, 'Values'],
     [`${root}visual.html`, 'Visual'],
     [`${root}evidence.html`, 'Evidence'],
     [`${root}css-report.html`, 'CSS'],

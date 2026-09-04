@@ -285,6 +285,8 @@ export type FindingCategory =
   | 'page.alias'
   // content (Phase 3.2)
   | 'content.drift'
+  /** Text drift where an extractable value moved: a fee, date, phone number. */
+  | 'content.value-drift'
   | 'content.missing'
   | 'content.added'
   | 'content.order-changed'

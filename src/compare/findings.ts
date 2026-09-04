@@ -85,8 +85,17 @@ export const DEFAULT_SEVERITIES: Record<FindingCategory, Severity> = {
   'page.redirected': 'warning',
   'page.alias': 'info',
 
-  // Content.
+  // Content. Text is compared for EXACT equality - anything that is not the
+  // same text is an error, with no similarity tolerance. Similarity is used
+  // only to decide which source node pairs with which target node; it never
+  // decides whether a difference is acceptable.
+  //
+  // `value-drift` is the same severity and exists to rank and name, not to
+  // excuse: it marks drift where an extractable fact moved - a fee, date,
+  // duration, contact detail, negation or obligation - so those lead the report
+  // instead of sitting among the rewordings.
   'content.drift': 'error',
+  'content.value-drift': 'error',
   'content.missing': 'error',
   'content.added': 'warning',
   // Reordering is usually a template decision, not lost content.
@@ -173,7 +182,8 @@ const CATEGORY_PRIORITY: Partial<Record<FindingCategory, number>> = {
   'price.currency-drift': 0,
   'price.missing': 1,
   'price.added': 1,
-  'content.drift': 1,
+  'content.value-drift': 0,
+  'content.drift': 2,
   'content.missing': 2,
   'content.added': 2,
   'image.missing': 2,

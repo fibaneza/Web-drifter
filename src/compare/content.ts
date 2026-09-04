@@ -12,6 +12,7 @@ import { trigramSimilarity, truncate } from '../extract/text.js';
 import { align, type AlignedPair } from './align.js';
 import { createFinding, severityFor } from './findings.js';
 import { boxDetails, type GeometryIndex } from './geometry-index.js';
+import { describeChange as describeCriticalChange, diffCriticalValues } from './critical-values.js';
 
 /**
  * Content comparison.
@@ -216,17 +217,33 @@ function classifyPair(
   if (isIdentical(pair.source, pair.target)) return null;
 
   const changed = describeChange(pair.source, pair.target);
+
+  // Both are errors: text that is not identical is drift, full stop. The split
+  // is about RANKING, not tolerance - a fee, date, duration, contact detail,
+  // negation or obligation that moved is named as such and sorted first, so it
+  // cannot sit unnoticed among rewordings that score as more similar. Nothing
+  // here suppresses or downgrades a difference.
+  const valueChanges = diffCriticalValues(pair.source.text, pair.target.text);
+  const category: FindingCategory =
+    valueChanges.length > 0 ? 'content.value-drift' : 'content.drift';
+
   return createFinding({
-    category: 'content.drift',
-    severity: severityFor('content.drift', severities),
+    category,
+    severity: severityFor(category, severities),
     path: source.path,
     sourceUrl: source.finalUrl,
     targetUrl: target.finalUrl,
     region: pair.source.region,
     nodeKind: pair.source.kind,
     subject: `${pair.source.key}#${pair.source.ordinal}`,
+    ...(valueChanges.length > 0
+      ? { facet: valueChanges.map((change) => change.class).join('+') }
+      : {}),
     confidence: pair.confidence,
-    label: changed.label,
+    label:
+      valueChanges.length > 0
+        ? `${changed.label} (${valueChanges.map(describeCriticalChange).join('; ')})`
+        : changed.label,
     expected: changed.expected,
     actual: changed.actual,
     details: {
@@ -238,6 +255,12 @@ function classifyPair(
       // Surfaced so a reviewer can discount a finding built on a weak pairing
       // rather than having to guess why two unrelated nodes were compared.
       lowConfidence: pair.confidence < options.minMatchConfidence,
+      ...(valueChanges.length > 0
+        ? {
+            valueChanges,
+            valueClasses: valueChanges.map((change) => change.class),
+          }
+        : {}),
       ...boxDetails(pair.source, pair.target, geometry),
     },
   });

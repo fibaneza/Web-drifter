@@ -394,6 +394,34 @@ describe('report (end to end)', () => {
     );
   });
 
+  it('projects changed values into their own report', async () => {
+    const html = await read('values.html');
+    assert.match(html, /Changed values/);
+    assert.match(await read('index.html'), /href="values\.html"/);
+
+    // Either rows, or an explicit statement that nothing changed - never a
+    // silently empty page.
+    const hasRows = /<del>/.test(html);
+    const saysClean = /No extractable value changed|survived the migration unchanged/.test(html);
+    assert.ok(hasRows || saysClean, 'values report is neither populated nor explicitly clean');
+  });
+
+  it('separates a value revision from a pure rewording', () => {
+    const categories = new Set(result.model.findings.map((f) => f.category));
+    // The fixture pair changes a price, so at least one value-drift must exist.
+    assert.ok(
+      categories.has('content.value-drift') || categories.has('content.drift'),
+      'no content drift at all - the fixtures stopped differing',
+    );
+
+    for (const finding of result.model.findings) {
+      if (finding.category !== 'content.value-drift') continue;
+      assert.ok(Array.isArray(finding.details?.['valueChanges']), 'value-drift carries no changes');
+      // Not identical means error, whichever kind of drift it is.
+      assert.equal(finding.severity, 'error');
+    }
+  });
+
   /* ----------------------------- visual map ------------------------------- */
 
   it('maps visible differences onto the full-page captures', async () => {

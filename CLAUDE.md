@@ -47,7 +47,20 @@ Break any of these and the tool becomes a noise generator nobody trusts.
    one — at which point it catches nothing at all. Severity is graded by
    distance across `info → warning`. Elements _disappearing_ is different and
    stays an error: that is a missing component, not styling.
-10. **Every percentage names its denominator, and unreachable pages are outside
+10. **Text is compared for exact equality; similarity only decides pairing.**
+    `thresholds.textSimilarity` (0.6) chooses which source node pairs with which
+    target node. It never decides whether a difference is acceptable. Text that
+    is not identical is an error, with no tolerance band. Similarity is also
+    actively misleading as a severity signal — "Fees are non-refundable" against
+    "Fees are refundable" scores 0.83, while a harmless imperative rewrite scores
+    0.69 — so it must never be used to rank findings by importance.
+11. **No LLM, and no semantic comparison, anywhere in the pipeline.** Considered
+    and rejected: it breaks determinism, and every downstream mechanism depends
+    on determinism — stable finding ids for `ignore.findingIds`, the `doctor`
+    noise floor, and CI gating that must not flap. Discrimination between a
+    rewrite and a revision is done by extracting facts that compare exactly
+    (`src/compare/critical-values.ts`), not by judging meaning.
+12. **Every percentage names its denominator, and unreachable pages are outside
     it.** A source page nothing links to is usually a forgotten campaign or
     legacy URL. Counting it measures the size of the legacy backlog rather than
     the quality of the migration, so it is compared and reported but excluded
@@ -149,3 +162,46 @@ sandbox that already ships a browser.
 | 8     | Region-qualified identity; CLI URL flags; report sorting     | done   |
 | 9     | `drifter diff`: run-over-run comparison                      | done   |
 | 10    | Orphan pages; paginated evidence; self-explanatory cards     | done   |
+| 11    | `drifter publish`; audit fixes; sitemap parsing coverage     | done   |
+| 12    | Redirects, bin entry point, robots-declared sitemaps         | done   |
+| 13    | Device matrix column alignment                               | done   |
+| 14    | Per-side stabilization timing                                | done   |
+| 15    | Visual map: differences drawn on the page                    | done   |
+| 16    | Landmark inference for markup with no landmarks              | done   |
+| 17    | SVG paint; colours inside shadows and gradients              | done   |
+| 18    | Findings by section                                          | done   |
+| 19    | `content.value-drift` and the changed-values report          | done   |
+
+### What each recent phase actually changed
+
+Read this before re-deriving any of it from the source tree.
+
+- **12** — `request({ maxRedirections })` is no longer supported by undici and
+  throws; both call sites caught broadly, so sitemap seeding silently returned
+  zero seeds and every external link was reported unreachable. Replaced with
+  `interceptors.redirect` on an explicit Agent in `src/core/http.ts`. The `bin`
+  entry did nothing when installed: the self-execute guard compared
+  `import.meta.url` against an unresolved `argv[1]`, which never matches through
+  a bin symlink. robots.txt `Sitemap:` directives are now read and tried before
+  `/sitemap.xml`, and both robots and sitemap fetches carry `site.headers`.
+- **14** — `stabilization` timing may be overridden per side
+  (`source.stabilization` / `target.stabilization`), merged field by field. Only
+  timing is overridable; `locale`, `timezoneId` and the clock/random freezes stay
+  global because they must match for the comparison to be like-for-like, and the
+  per-side schema is `.strict()` so naming one is a config error.
+- **15** — `visual.html` draws every visually-perceptible finding on the two
+  full-page captures, numbered, with a legend. Driven by findings, never by
+  pixels (invariant 5). Excludes typography, invisible markup, and movement under
+  8 CSS px.
+- **16** — when a document declares no landmark at all, region is inferred from
+  `id`/`class` (`src/extract/regions.ts`). Without it a Sitecore-style source
+  puts every node in `other` while a React target uses real landmarks, alignment
+  never crosses a region, and a perfect migration reads as total content loss on
+  both sides at once. Inference never overrides a real landmark.
+- **19** — text drift splits into `content.drift` (wording changed, every
+  extractable value survived) and `content.value-drift` (a fee, date, duration,
+  contact detail, negation or obligation moved). **Both are `error`** — the split
+  ranks and names, it never excuses. `values.html` projects the second into a
+  table of old value beside new. Modal changes count only when the sentence is
+  otherwise identical, because turning a sentence into an imperative drops a
+  modal without changing the instruction.
