@@ -372,7 +372,7 @@ export function renderMatrix(
         row.path,
       )}">
   <td><a href="${escapeAttr(root + pageHref(row.path))}"><code>${escapeHtml(row.path)}</code></a></td>
-  <td class="num">${cell(row.shared)}</td>
+  ${cell(row.shared)}
   ${cells}
   <td class="num"><strong>${row.total}</strong></td>
 </tr>`;
@@ -390,6 +390,7 @@ export function renderMatrix(
 </table></div>`;
 }
 
+/** A whole cell, `<td>` included - never interpolate this inside another `<td>`. */
 function cell(count: number): string {
   if (count === 0) return '<td class="num cell-0">·</td>';
   return `<td class="num cell-hit">${count}</td>`;
