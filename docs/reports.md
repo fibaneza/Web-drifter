@@ -94,6 +94,32 @@ One full-page screenshot is captured per page per device, and element crops are
 cut from it offline using the geometry already recorded — one screenshot, many
 crops, no extra navigation.
 
+## Findings by section
+
+"Which page drifted" and "which section drifted" are different questions, and
+the second is not answerable from a per-page breakdown.
+
+| Section      | Findings | Share |
+| ------------ | -------- | ----- |
+| `main`       | 41       | 87.2% |
+| `header`     | 4        | 8.5%  |
+| `page-level` | 2        | 4.3%  |
+| `nav`        | 0        | ·     |
+| `footer`     | 0        | ·     |
+
+Read it for where the work is. Drift concentrated in `header`, `nav` or
+`footer` is **shared chrome** — one fix usually clears every page at once, and a
+non-zero `nav` figure is the loudest of all because navigation appears on every
+page. The same count spread across `main` is a page-by-page content job.
+
+Regions with no findings are still listed: `nav: 0` is a result, and a table
+that omits it leaves you unsure whether the navigation was compared at all.
+`page-level` holds findings that carry no region — page coverage, links,
+whole-page CSS — so the rows always sum to the headline total.
+
+Region assignment, including what happens when a page declares no landmarks, is
+described in [the page model](page-model.md#1-partition-by-region).
+
 ## The device matrix
 
 The overview page leads with a matrix so a regression that only affects one

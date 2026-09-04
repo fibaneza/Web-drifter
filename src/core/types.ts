@@ -553,6 +553,19 @@ export interface RunStats {
     total: number;
     bySeverity: Record<Severity, number>;
     byCategory: Partial<Record<FindingCategory, number>>;
+    /**
+     * Findings per landmark region.
+     *
+     * Answers "which section drifted" without reading the list. On a migration
+     * the answer is usually lopsided and tells you where the work is: drift
+     * confined to `header` and `footer` is a shared-chrome problem, one page's
+     * worth of `main` is a content problem, and a `nav` figure that is not zero
+     * means the site's navigation differs, which affects every page at once.
+     *
+     * Findings with no region - page coverage, links, whole-page CSS - are
+     * counted under `none` rather than being silently dropped from the total.
+     */
+    byRegion: Record<Region | 'none', number>;
   };
 
   pages: {

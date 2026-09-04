@@ -10,6 +10,7 @@ import type {
   PageSnapshot,
   PageStats,
   PriceStats,
+  Region,
   RunStats,
   Severity,
 } from '../core/types.js';
@@ -332,9 +333,20 @@ function buildRunStats(input: {
 
   const bySeverity: Record<Severity, number> = { error: 0, warning: 0, info: 0 };
   const byCategory: Partial<Record<FindingCategory, number>> = {};
+  const byRegion: Record<Region | 'none', number> = {
+    header: 0,
+    nav: 0,
+    main: 0,
+    footer: 0,
+    aside: 0,
+    other: 0,
+    none: 0,
+  };
   for (const finding of findings) {
     bySeverity[finding.severity] += 1;
     byCategory[finding.category] = (byCategory[finding.category] ?? 0) + 1;
+    const region: Region | 'none' = finding.region ?? 'none';
+    byRegion[region] = (byRegion[region] ?? 0) + 1;
   }
 
   const clean = pageStats.filter((p) => p.clean).length;
@@ -357,7 +369,7 @@ function buildRunStats(input: {
     prices: input.prices,
     css: input.css,
     links: input.links,
-    findings: { total: findings.length, bySeverity, byCategory },
+    findings: { total: findings.length, bySeverity, byCategory, byRegion },
     pages: {
       total: pageStats.length,
       clean,

@@ -149,6 +149,21 @@ export function renderOverview(context: RenderContext): string {
   </table></div>
 </section>`;
 
+  // Which SECTION drifted, which is a different question from which page. Drift
+  // confined to header and footer is one shared-chrome fix; the same count
+  // spread across main is a page-by-page content job. A non-zero nav figure is
+  // the loudest of all, because navigation appears on every page at once.
+  const regions = `<section>
+  <h2>Findings by section</h2>
+  <p class="muted">Where the drift lives. A count concentrated in
+  <code>header</code>, <code>nav</code> or <code>footer</code> is shared chrome &mdash; one fix
+  usually clears every page at once.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Section</th><th class="num">Findings</th><th class="num">Share</th></tr></thead>
+    <tbody>${renderRegionRows(stats.findings.byRegion, stats.findings.total)}</tbody>
+  </table></div>
+</section>`;
+
   // The overview used to render statistics and nothing else, so the first page
   // anyone opened showed no findings at all - and, since evidence lives on a
   // finding, no screenshots either. These are the rows worth reading first.
@@ -218,6 +233,7 @@ export function renderOverview(context: RenderContext): string {
       coverage +
       matrix +
       devices +
+      regions +
       topProperties +
       categories,
   });
@@ -677,6 +693,35 @@ ${renderOrphanSection(context)}`;
     nav: standardNav('', 'Coverage'),
     body,
   });
+}
+
+/**
+ * Section rows, ordered by count.
+ *
+ * Regions with no findings are still listed: "nav: 0" is a result worth seeing,
+ * and a table that silently omits it leaves the reader unsure whether the
+ * navigation was compared at all.
+ */
+function renderRegionRows(byRegion: Record<string, number>, total: number): string {
+  const labels: Record<string, string> = {
+    header: 'header',
+    nav: 'nav',
+    main: 'main',
+    footer: 'footer',
+    aside: 'aside',
+    other: 'other',
+    none: 'page-level',
+  };
+
+  return Object.entries(byRegion)
+    .sort((a, b) => b[1] - a[1])
+    .map(([region, count]) => {
+      const share = total === 0 ? 0 : Math.round((count / total) * 1000) / 10;
+      return `<tr><td><code>${escapeHtml(labels[region] ?? region)}</code></td>
+      <td class="num">${count}</td>
+      <td class="num">${count === 0 ? '&middot;' : `${share}%`}</td></tr>`;
+    })
+    .join('');
 }
 
 /** Re-exported so the writer can render a single finding in isolation. */

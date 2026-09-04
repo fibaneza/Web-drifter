@@ -381,6 +381,19 @@ describe('report (end to end)', () => {
     );
   });
 
+  it('breaks findings down by section, and the parts sum to the whole', async () => {
+    const html = await read('index.html');
+    assert.match(html, /Findings by section/);
+
+    const byRegion = result.model.stats.findings.byRegion;
+    const summed = Object.values(byRegion).reduce((a, b) => a + b, 0);
+    assert.equal(
+      summed,
+      result.model.stats.findings.total,
+      'the section breakdown disagrees with the headline total',
+    );
+  });
+
   /* ----------------------------- visual map ------------------------------- */
 
   it('maps visible differences onto the full-page captures', async () => {
