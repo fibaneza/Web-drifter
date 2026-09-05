@@ -52,6 +52,14 @@ export interface ReadinessOptions {
    * once - so set it to 0 for a purely static site.
    */
   awaitFirstRenderMs?: number;
+  /**
+   * A visible element that proves the route content, rather than its shell,
+   * has rendered. This is deliberately optional: static pages and React apps
+   * that mutate once with their real content do not need an implementation
+   * hint, while a skeleton-first app can opt in without globally slowing down
+   * the legacy side.
+   */
+  readySelector?: string | undefined;
   /** How often to re-check. */
   pollMs?: number;
 }
@@ -73,6 +81,7 @@ function probe(
   quietMs: number,
   minWaitMs: number,
   awaitFirstRenderMs: number,
+  readySelector: string | null,
   globalName: string,
 ): ProbeResult {
   if (document.readyState !== 'complete') {
@@ -82,6 +91,34 @@ function probe(
   const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
   if (fonts && fonts.status !== 'loaded') {
     return { ready: false, blockedBy: `fonts=${fonts.status}` };
+  }
+
+  if (readySelector !== null) {
+    let element: Element | null;
+    try {
+      element = document.querySelector(readySelector);
+    } catch {
+      // Keep the invalid selector in the diagnostic. The caller records the
+      // timeout as a snapshot error rather than failing an entire crawl over a
+      // single misconfigured path.
+      return { ready: false, blockedBy: `readySelector is invalid: ${readySelector}` };
+    }
+
+    if (element === null) {
+      return { ready: false, blockedBy: `readySelector not found: ${readySelector}` };
+    }
+
+    const style = getComputedStyle(element);
+    const box = element.getBoundingClientRect();
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      style.contentVisibility === 'hidden' ||
+      box.width <= 0 ||
+      box.height <= 0
+    ) {
+      return { ready: false, blockedBy: `readySelector is not visible: ${readySelector}` };
+    }
   }
 
   const state = (window as unknown as Record<string, unknown>)[globalName] as
@@ -151,6 +188,7 @@ export async function waitForReady(
     timeoutMs,
     minWaitMs = quietMs,
     awaitFirstRenderMs = 1000,
+    readySelector,
     pollMs = 100,
   }: ReadinessOptions,
 ): Promise<ReadinessResult> {
@@ -160,16 +198,22 @@ export async function waitForReady(
   while (Date.now() - started < timeoutMs) {
     let result: ProbeResult;
     try {
-      result = await page.evaluate<ProbeResult, [number, number, number, string]>(
-        ([quiet, minWait, firstRender, globalName]) => {
+      result = await page.evaluate<ProbeResult, [number, number, number, string | null, string]>(
+        ([quiet, minWait, firstRender, selector, globalName]) => {
           // Installed by probeInitScript; see `probe` above for the source.
           return (
             window as unknown as {
-              __drifterProbe: (q: number, m: number, r: number, g: string) => ProbeResult;
+              __drifterProbe: (
+                q: number,
+                m: number,
+                r: number,
+                s: string | null,
+                g: string,
+              ) => ProbeResult;
             }
-          ).__drifterProbe(quiet, minWait, firstRender, globalName);
+          ).__drifterProbe(quiet, minWait, firstRender, selector, globalName);
         },
-        [quietMs, minWaitMs, awaitFirstRenderMs, DRIFTER_GLOBAL],
+        [quietMs, minWaitMs, awaitFirstRenderMs, readySelector ?? null, DRIFTER_GLOBAL],
       );
     } catch {
       // Navigation raced us (client-side route change). Retry.

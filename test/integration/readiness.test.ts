@@ -50,6 +50,75 @@ describe('readiness gate', () => {
     }
   });
 
+  it('waits for a configured React route marker, not merely its loading shell', async () => {
+    const page = await context.newPage();
+    try {
+      // The shell mutates immediately, then remains quiet for longer than the
+      // normal readiness window. Without `readySelector` it is accepted as the
+      // first render even though the route has not arrived yet.
+      await page.setContent(`<div id="app"><p class="skeleton">Loading…</p></div><script>
+        setTimeout(() => {
+          document.getElementById('app').innerHTML =
+            '<main data-route-ready><h1>Registration renewal</h1></main>';
+        }, 900);
+      </script>`);
+
+      const result = await waitForReady(page, {
+        quietMs: 150,
+        timeoutMs: 3000,
+        minWaitMs: 0,
+        awaitFirstRenderMs: 0,
+        readySelector: '[data-route-ready]',
+      });
+
+      assert.equal(result.ready, true, `gate should settle: ${result.blockedBy}`);
+      assert.equal(await page.locator('[data-route-ready]').count(), 1);
+      assert.ok(result.waitedMs >= 850, `returned at ${result.waitedMs}ms, before route content`);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('reports a missing ready selector rather than accepting a loading shell', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent('<div class="skeleton">Loading…</div>');
+
+      const result = await waitForReady(page, {
+        quietMs: 100,
+        timeoutMs: 500,
+        minWaitMs: 0,
+        awaitFirstRenderMs: 0,
+        readySelector: '[data-route-ready]',
+      });
+
+      assert.equal(result.ready, false);
+      assert.match(result.blockedBy ?? '', /readySelector not found/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('names an invalid ready selector instead of hiding configuration error', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent('<main>content</main>');
+
+      const result = await waitForReady(page, {
+        quietMs: 100,
+        timeoutMs: 500,
+        minWaitMs: 0,
+        awaitFirstRenderMs: 0,
+        readySelector: '[',
+      });
+
+      assert.equal(result.ready, false);
+      assert.match(result.blockedBy ?? '', /readySelector is invalid/);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('waits for content appended by a chain of deferred renders', async () => {
     const page = await context.newPage();
     try {

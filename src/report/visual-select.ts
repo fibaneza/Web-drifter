@@ -31,6 +31,9 @@ export const DEFAULT_MIN_AREA_PX = 80;
 /** Categories that describe something a viewer can see on the page. */
 const VISUAL_CATEGORIES: ReadonlySet<FindingCategory> = new Set<FindingCategory>([
   'content.drift',
+  // A fee, date, contact detail, negation or obligation that moved is the
+  // content change a reviewer most needs to see in context.
+  'content.value-drift',
   'content.missing',
   'content.added',
   'content.order-changed',

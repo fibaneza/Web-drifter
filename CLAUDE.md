@@ -171,6 +171,7 @@ sandbox that already ships a browser.
 | 17    | SVG paint; colours inside shadows and gradients              | done   |
 | 18    | Findings by section                                          | done   |
 | 19    | `content.value-drift` and the changed-values report          | done   |
+| 20    | React route readiness and complete visual marking            | done   |
 
 ### What each recent phase actually changed
 
@@ -205,3 +206,10 @@ Read this before re-deriving any of it from the source tree.
   table of old value beside new. Modal changes count only when the sentence is
   otherwise identical, because turning a sentence into an imperative drops a
   modal without changing the instruction.
+- **20** — React can mutate a loading shell before a route has content, so a
+  post-load mutation alone is not sufficient evidence that capture is ready.
+  `readySelector` is an optional global or per-side readiness hint which must be
+  visible before capture; it is never used for matching or comparison. The visual
+  map now marks `content.value-drift` alongside content, section and image
+  findings, and groups by an unambiguous `(path, viewport)` pair so paths with
+  whitespace do not lose their viewport or collide.

@@ -205,9 +205,11 @@ boxed and numbered, with a legend saying what each number is.
 
 It marks, it does not detect. The comparison has already decided what changed,
 which is why a marker carries a sentence — _"Price changed from $1,299.00 to
-$1,399.00"_ — rather than a red smear. Boxes are coloured by severity, and a
-number appearing on one side but not the other means the element exists on only
-one site.
+$1,399.00"_ — rather than a red smear. It includes changed critical values in
+text (fees, dates, contact details, obligations and similar facts), as well as
+content, section, image and visible layout findings. Boxes are coloured by
+severity, and a number appearing on one side but not the other means the
+element exists on only one site.
 
 Three things are deliberately **not** marked:
 

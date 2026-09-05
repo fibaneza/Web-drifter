@@ -48,6 +48,16 @@ describe('stabilizationFor', () => {
     assert.equal(target.readyTimeoutMs, 20_000);
   });
 
+  it('keeps a React readiness selector on the target only', () => {
+    const config = parseConfig({
+      ...base,
+      target: { ...base.target, stabilization: { readySelector: '[data-route-ready]' } },
+    });
+
+    assert.equal(stabilizationFor(config, 'target').readySelector, '[data-route-ready]');
+    assert.equal(stabilizationFor(config, 'source').readySelector, undefined);
+  });
+
   it('carries per-side slowPages rules', () => {
     const config = parseConfig({
       ...base,

@@ -46,6 +46,7 @@ describe('isVisualMark - categories', () => {
   it('marks content, image and price differences', () => {
     for (const category of [
       'content.drift',
+      'content.value-drift',
       'content.missing',
       'content.added',
       'content.order-changed',

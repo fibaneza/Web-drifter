@@ -209,7 +209,10 @@ immediately; a React rewrite fetches, then renders, and is perfectly quiet in
 between — so quiescence declares it settled while it still shows a placeholder,
 and the capture records "Loading…" as total content loss.
 
-The fix is `awaitFirstRenderMs`, and it belongs on the side that needs it:
+Start with `awaitFirstRenderMs`. If the application has a stable element that
+appears only after the actual route content has rendered, add `readySelector`.
+It prevents the readiness gate from accepting an animated shell or "Loading…"
+placeholder as the page:
 
 ```ts
 source: { name: 'legacy', baseUrl: 'https://legacy.example.com' },
@@ -217,20 +220,28 @@ target: {
   name: 'react',
   baseUrl: 'https://new.example.com',
   stabilization: {
-    awaitFirstRenderMs: 3000,   // wait for the router's first paint
+    readySelector: '[data-route-ready]', // visible only with real route content
+    awaitFirstRenderMs: 3000,   // extra protection for the router's first paint
     minWaitMs: 1000,            // floor for late-starting hydration
     quietMs: 800,
   },
 },
 ```
 
+Choose a durable, route-level data attribute rather than a heading whose text
+varies by page. The selector is checked only for presence and visibility; it is
+never used to pair, compare, or otherwise identify Sitecore and React content.
+An absent, hidden, or invalid selector makes the capture time out with that
+reason recorded, rather than silently comparing a loading shell.
+
 Every field falls back to the global `stabilization` value, so overriding one
 setting keeps the rest. Setting these globally instead would make the legacy
 side pay the same wait on every page — at `awaitFirstRenderMs: 3000` across a
 thousand pages, roughly fifty minutes for nothing.
 
-Only timing may be overridden per side: `quietMs`, `readyTimeoutMs`,
-`minWaitMs`, `awaitFirstRenderMs`, `scrollThroughPage` and `slowPages`.
+Only readiness settings may be overridden per side: `quietMs`,
+`readyTimeoutMs`, `minWaitMs`, `awaitFirstRenderMs`, `readySelector`,
+`scrollThroughPage` and `slowPages`.
 `locale`, `timezoneId` and the clock and random freezes stay global, because a
 per-side difference there would make the comparison unfair rather than merely
 slower. Naming one of them in a per-side block is a config error, not a silently

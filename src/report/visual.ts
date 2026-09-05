@@ -71,28 +71,54 @@ const SEVERITY_COLOR: Record<Severity, string> = {
 
 export const VISUAL_DIR = join('assets', 'visual');
 
+export interface VisualMarkGroup {
+  path: string;
+  viewport: string;
+  findings: Finding[];
+}
+
+/**
+ * Partition markers by the exact page/viewport pair they annotate.
+ *
+ * Kept pure because path encoding is not cosmetic: `/renew a plate` and
+ * `/renew` at a viewport named `a plate` must never collapse or be reparsed
+ * into each other before screenshots are opened.
+ */
+export function groupVisualMarks(
+  findings: readonly Finding[],
+  primaryViewport: string,
+  options: VisualFilterOptions = {},
+): VisualMarkGroup[] {
+  const byKey = new Map<string, VisualMarkGroup>();
+  for (const finding of selectVisualMarks(findings, options)) {
+    const viewport = finding.viewport ?? primaryViewport;
+    // A canonical path may contain a space. String-concatenating it with the
+    // viewport and splitting later turns `/renew a plate` into the path
+    // `/renew`, then silently writes evidence for the wrong page. JSON is a
+    // stable collision-free key while the structured value keeps parsing out of
+    // this hot path altogether.
+    const key = JSON.stringify([finding.path, viewport]);
+    const bucket = byKey.get(key);
+    if (bucket) bucket.findings.push(finding);
+    else byKey.set(key, { path: finding.path, viewport, findings: [finding] });
+  }
+  return [...byKey.values()];
+}
+
 export async function generateVisualMaps(options: VisualMapOptions): Promise<VisualPageMap[]> {
   const { logger } = options;
   const maxMarks = options.maxMarksPerPage ?? DEFAULT_MAX_MARKS;
 
-  const byKey = new Map<string, Finding[]>();
-  for (const finding of selectVisualMarks(options.findings, options)) {
-    const viewport = finding.viewport ?? options.primaryViewport;
-    const key = `${finding.path} ${viewport}`;
-    const bucket = byKey.get(key);
-    if (bucket) bucket.push(finding);
-    else byKey.set(key, [finding]);
-  }
-
   // Most-affected pages first, so a cap never discards the worst page.
-  const ordered = [...byKey.entries()].sort((a, b) => b[1].length - a[1].length);
+  const ordered = groupVisualMarks(options.findings, options.primaryViewport, options).sort(
+    (a, b) => b.findings.length - a.findings.length,
+  );
   const capped = ordered.slice(0, options.maxPages ?? DEFAULT_MAX_PAGES);
 
   const maps: VisualPageMap[] = [];
 
-  for (const [key, group] of capped) {
-    const [path = '', viewport = options.primaryViewport] = key.split(' ');
-    const findings = group.slice(0, maxMarks);
+  for (const { path, viewport, findings: grouped } of capped) {
+    const findings = grouped.slice(0, maxMarks);
 
     try {
       const map = await renderPageMap(path, viewport, findings, options);

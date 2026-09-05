@@ -1,8 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { drawBoxes, overlaySvg, type NumberedBox } from '../../src/report/visual.js';
+import {
+  drawBoxes,
+  groupVisualMarks,
+  overlaySvg,
+  type NumberedBox,
+} from '../../src/report/visual.js';
 import { renderVisualReport } from '../../src/report/html/visual-page.js';
 import type { VisualPageMap } from '../../src/report/visual.js';
+import type { Finding } from '../../src/core/types.js';
 
 /**
  * Marker placement.
@@ -80,6 +86,35 @@ describe('drawBoxes', () => {
       'base64',
     );
     assert.equal(await drawBoxes(png, [], 1), png);
+  });
+});
+
+describe('groupVisualMarks', () => {
+  const finding = (path: string, viewport?: string): Finding => ({
+    id: `${path}-${viewport ?? 'primary'}`,
+    category: 'content.value-drift',
+    severity: 'error',
+    path,
+    ...(viewport === undefined ? {} : { viewport }),
+    label: 'Price changed',
+    confidence: 1,
+    details: { sourceBox: { x: 1, y: 1, width: 20, height: 20 } },
+  });
+
+  it('preserves a path containing whitespace instead of splitting it at the viewport', () => {
+    const groups = groupVisualMarks([finding('/renew a plate')], 'desktop');
+    assert.deepEqual(
+      groups.map(({ path, viewport }) => ({ path, viewport })),
+      [{ path: '/renew a plate', viewport: 'desktop' }],
+    );
+  });
+
+  it('keeps distinct path and viewport pairs separate', () => {
+    const groups = groupVisualMarks(
+      [finding('/renew a plate', 'mobile-sm'), finding('/renew a plate', 'desktop')],
+      'desktop',
+    );
+    assert.equal(groups.length, 2);
   });
 });
 

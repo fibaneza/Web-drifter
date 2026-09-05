@@ -18,7 +18,7 @@ const regexLike = z
   .transform((v) => (typeof v === 'string' ? new RegExp(v) : v));
 
 /**
- * Timing fields that describe how long a site takes to settle.
+ * Readiness fields that describe when a site is safe to capture.
  *
  * Split out from the rest of `stabilization` because these - and only these -
  * may be overridden per side. A legacy server-rendered CMS and a React rewrite
@@ -56,6 +56,14 @@ const pageTimingShape = {
    * site can set it to 0.
    */
   awaitFirstRenderMs: z.number().int().min(0).default(1000),
+  /**
+   * An element that must be visible before capture.
+   *
+   * Useful for a React target whose shell or loading skeleton mutates the DOM
+   * before the route has rendered. This is a readiness hint only: selectors
+   * are never used to compare the two sites.
+   */
+  readySelector: z.string().min(1).optional(),
   /** Scroll to the bottom and back to trigger lazy-loaded content. */
   scrollThroughPage: z.boolean().default(true),
   /**
