@@ -302,6 +302,9 @@ async function capturePage(options: CapturePageOptions): Promise<PageSnapshot> {
       quietMs: stabilization.quietMs,
       awaitFirstRenderMs: stabilization.awaitFirstRenderMs,
       ...(stabilization.minWaitMs === undefined ? {} : { minWaitMs: stabilization.minWaitMs }),
+      ...(stabilization.readySelector === undefined
+        ? {}
+        : { readySelector: stabilization.readySelector }),
     },
     stabilization.slowPages,
   );
@@ -338,9 +341,7 @@ async function capturePage(options: CapturePageOptions): Promise<PageSnapshot> {
         timeoutMs: timeouts.readyTimeoutMs,
         minWaitMs: timeouts.minWaitMs,
         awaitFirstRenderMs: timeouts.awaitFirstRenderMs,
-        ...(stabilization.readySelector === undefined
-          ? {}
-          : { readySelector: stabilization.readySelector }),
+        ...(timeouts.readySelector === undefined ? {} : { readySelector: timeouts.readySelector }),
       });
       const deviceReadyMs = Date.now() - readyStart;
 
@@ -366,9 +367,9 @@ async function capturePage(options: CapturePageOptions): Promise<PageSnapshot> {
           minWaitMs: 0,
           // The page has already rendered once; do not re-wait for a first render.
           awaitFirstRenderMs: 0,
-          ...(stabilization.readySelector === undefined
+          ...(timeouts.readySelector === undefined
             ? {}
-            : { readySelector: stabilization.readySelector }),
+            : { readySelector: timeouts.readySelector }),
         });
         if (!settled.ready) {
           errors.push(

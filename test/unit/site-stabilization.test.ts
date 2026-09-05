@@ -71,6 +71,23 @@ describe('stabilizationFor', () => {
     assert.equal(stabilizationFor(config, 'source').slowPages.length, 0);
   });
 
+  it('accepts a route-specific React readiness selector', () => {
+    const config = parseConfig({
+      ...base,
+      target: {
+        ...base.target,
+        stabilization: {
+          slowPages: [{ pattern: '^/application', readySelector: '[data-application-ready]' }],
+        },
+      },
+    });
+
+    assert.equal(
+      stabilizationFor(config, 'target').slowPages[0]?.readySelector,
+      '[data-application-ready]',
+    );
+  });
+
   it('does not let a side override the settings that must match', () => {
     // locale, timezoneId and the freezes are deliberately absent from the
     // per-side schema; `.strict()` turns an attempt into a config error rather

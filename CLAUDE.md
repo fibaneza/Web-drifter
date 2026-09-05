@@ -172,6 +172,7 @@ sandbox that already ships a browser.
 | 18    | Findings by section                                          | done   |
 | 19    | `content.value-drift` and the changed-values report          | done   |
 | 20    | React route readiness and complete visual marking            | done   |
+| 21    | Per-path React readiness selectors                           | done   |
 
 ### What each recent phase actually changed
 
@@ -213,3 +214,8 @@ Read this before re-deriving any of it from the source tree.
   map now marks `content.value-drift` alongside content, section and image
   findings, and groups by an unambiguous `(path, viewport)` pair so paths with
   whitespace do not lose their viewport or collide.
+- **21** — routes do not all hydrate alike. `slowPages` rules can carry a
+  `readySelector`, resolved before capture with the existing first-match-wins
+  behavior. The matching selector replaces the side default for every viewport
+  and post-scroll settle on that path, without affecting other routes or being
+  used as comparison identity.

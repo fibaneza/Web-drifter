@@ -202,6 +202,31 @@ stabilization: {
 Pages whose readiness gate timed out are flagged **slow capture** in the report,
 so their findings can be read with appropriate suspicion.
 
+The same first-match-wins rules can require a marker on just the React routes
+that render a skeleton before their data. A matching `readySelector` replaces
+the side-wide selector for that path; routes not matching the rule keep their
+usual readiness behavior:
+
+```ts
+target: {
+  name: 'react',
+  baseUrl: 'https://new.example.com',
+  stabilization: {
+    slowPages: [
+      {
+        pattern: /^\/application\//,
+        readyTimeoutMs: 60_000,
+        readySelector: '[data-application-ready]',
+      },
+    ],
+  },
+},
+```
+
+Put more-specific patterns first. As with a side-wide selector, this is a
+capture readiness hint only; it is never used to match Sitecore and React DOM
+or content.
+
 ### 6. Give the slower side room, not both
 
 The two sides rarely need the same budget. A server-rendered CMS is ready almost

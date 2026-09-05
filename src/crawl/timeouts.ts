@@ -17,6 +17,7 @@ export interface PageTimeouts {
   quietMs: number;
   minWaitMs: number;
   awaitFirstRenderMs: number;
+  readySelector?: string | undefined;
 }
 
 export interface SlowPageRule {
@@ -24,6 +25,7 @@ export interface SlowPageRule {
   navigationTimeoutMs?: number | undefined;
   readyTimeoutMs?: number | undefined;
   quietMs?: number | undefined;
+  readySelector?: string | undefined;
 }
 
 export interface TimeoutDefaults {
@@ -32,6 +34,7 @@ export interface TimeoutDefaults {
   quietMs: number;
   minWaitMs?: number | undefined;
   awaitFirstRenderMs: number;
+  readySelector?: string | undefined;
 }
 
 /**
@@ -49,6 +52,7 @@ export function resolveTimeouts(
     quietMs: defaults.quietMs,
     minWaitMs: defaults.minWaitMs ?? defaults.quietMs,
     awaitFirstRenderMs: defaults.awaitFirstRenderMs,
+    readySelector: defaults.readySelector,
   };
 
   const rule = slowPages.find((r) => r.pattern.test(path));
@@ -62,5 +66,6 @@ export function resolveTimeouts(
     // A longer quiet window implies a longer settle floor unless pinned.
     minWaitMs: defaults.minWaitMs ?? quietMs,
     awaitFirstRenderMs: defaults.awaitFirstRenderMs,
+    readySelector: rule.readySelector ?? base.readySelector,
   };
 }

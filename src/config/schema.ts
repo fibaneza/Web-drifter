@@ -67,9 +67,9 @@ const pageTimingShape = {
   /** Scroll to the bottom and back to trigger lazy-loaded content. */
   scrollThroughPage: z.boolean().default(true),
   /**
-   * Per-path timeout overrides for pages known to be slow - report builders,
-   * search result pages, anything fronting a slow upstream. The first
-   * matching entry wins.
+   * Per-path readiness overrides for pages known to be slow or skeleton-first
+   * - report builders, search result pages, anything fronting a slow upstream.
+   * The first matching entry wins.
    */
   slowPages: z
     .array(
@@ -78,6 +78,7 @@ const pageTimingShape = {
         navigationTimeoutMs: z.number().int().positive().optional(),
         readyTimeoutMs: z.number().int().positive().optional(),
         quietMs: z.number().int().positive().optional(),
+        readySelector: z.string().min(1).optional(),
       }),
     )
     .default([]),
